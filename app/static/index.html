@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Семейное дерево</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="logo">
+        <div class="logo-icon">🌳</div>
+        <span>Семейное дерево</span>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary" id="btn-add-person" type="button">+ Человек</button>
+        <button class="btn" id="btn-add-relation" type="button">+ Связь</button>
+        <button class="btn btn-ghost" id="btn-import" type="button">Импорт Gramps</button>
+        <button class="btn btn-ghost" id="btn-export-obsidian" type="button">Экспорт Obsidian</button>
+        <button class="btn btn-ghost" id="btn-path" type="button">Путь родства</button>
+        <input type="file" id="file-gramps" accept=".gpkg,.gramps,.xml,application/gzip,application/xml" hidden />
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h2>Люди</h2>
+        <div class="search-wrap">
+          <input class="input" id="search" type="search" placeholder="Поиск по имени…" autocomplete="off" />
+        </div>
+      </div>
+      <div class="person-list" id="person-list"></div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <div class="tabs" id="view-tabs">
+          <button class="tab active" data-view="tree" type="button">Дерево</button>
+          <button class="tab" data-view="relatives" type="button">Родственники</button>
+        </div>
+        <label>
+          Вверх
+          <input class="input" id="depth-up" type="number" min="0" max="10" value="2" style="width: 56px" />
+        </label>
+        <label>
+          Вниз
+          <input class="input" id="depth-down" type="number" min="0" max="10" value="2" style="width: 56px" />
+        </label>
+        <button class="btn btn-sm" id="btn-refresh" type="button">Обновить</button>
+        <span id="toolbar-hint" style="color: var(--text-muted); font-size: 0.8rem; margin-left: auto"></span>
+      </div>
+
+      <div class="view-area" id="view-area">
+        <div class="empty-state" id="empty-state">
+          <div class="icon">👨‍👩‍👧‍👦</div>
+          <h3>Выберите человека</h3>
+          <p>Кликните по человеку в списке слева,<br />чтобы построить его семейное дерево</p>
+        </div>
+        <div class="tree-canvas hidden" id="tree-canvas"></div>
+        <div class="path-result hidden" id="path-result"></div>
+
+        <aside class="detail-panel hidden" id="detail-panel">
+          <button class="btn btn-sm btn-ghost close-btn" id="btn-close-detail" type="button" aria-label="Закрыть">✕</button>
+          <h3 id="detail-name"></h3>
+          <p id="detail-sub" style="color: var(--text-muted); font-size: 0.85rem"></p>
+          <div id="detail-relatives"></div>
+          <div class="detail-actions">
+            <button class="btn btn-sm btn-primary" id="btn-edit-person" type="button">Редактировать</button>
+            <button class="btn btn-sm" id="btn-set-root" type="button">В корень дерева</button>
+            <button class="btn btn-sm btn-danger" id="btn-delete-person" type="button">Удалить</button>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal: person (create / edit) -->
+  <div class="modal-overlay hidden" id="modal-person">
+    <div class="modal" role="dialog" aria-labelledby="modal-person-title">
+      <h2 id="modal-person-title">Новый человек</h2>
+      <form id="form-person">
+        <input type="hidden" id="p-id" name="id" value="" />
+        <div class="form-grid">
+          <div class="field">
+            <label for="p-last">Фамилия</label>
+            <input class="input" id="p-last" name="last_name" />
+          </div>
+          <div class="field">
+            <label for="p-first">Имя *</label>
+            <input class="input" id="p-first" name="first_name" required />
+          </div>
+          <div class="field">
+            <label for="p-middle">Отчество</label>
+            <input class="input" id="p-middle" name="middle_name" />
+          </div>
+          <div class="field">
+            <label for="p-maiden">Девичья фамилия</label>
+            <input class="input" id="p-maiden" name="maiden_name" />
+          </div>
+          <div class="field">
+            <label for="p-gender">Пол</label>
+            <select class="select" id="p-gender" name="gender">
+              <option value="unknown">Не указан</option>
+              <option value="male">Мужской</option>
+              <option value="female">Женский</option>
+              <option value="other">Другой</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="p-birth-place">Место рождения</label>
+            <input class="input" id="p-birth-place" name="birth_place" />
+          </div>
+          <div class="field">
+            <label for="p-birth">Дата рождения</label>
+            <input class="input" id="p-birth" name="birth_date" type="date" />
+          </div>
+          <div class="field">
+            <label for="p-death">Дата смерти</label>
+            <input class="input" id="p-death" name="death_date" type="date" />
+          </div>
+          <div class="field full">
+            <label for="p-notes">Заметки</label>
+            <textarea class="textarea" id="p-notes" name="notes"></textarea>
+          </div>
+        </div>
+        <div class="field full photo-section" id="modal-photo-section" style="margin-top:1rem;padding:1rem;background:var(--bg);border-radius:10px;border:1px dashed var(--border);">
+          <label style="font-size:0.75rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.35rem;">Фото</label>
+          <div id="photo-preview-container" style="text-align:center;min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.5rem;">
+            <div id="photo-preview" style="max-width:160px;max-height:160px;overflow:hidden;border-radius:8px;display:none;">
+              <img id="photo-preview-img" src="" alt="" style="width:100%;height:auto;object-fit:cover;display:block;" />
+            </div>
+            <div id="photo-placeholder" style="font-size:2.5rem;opacity:0.3;">📷</div>
+            <div id="photo-actions" style="display:flex;gap:0.35rem;flex-wrap:wrap;justify-content:center;">
+              <input type="file" id="photo-file-input" accept="image/*" hidden />
+              <button class="btn btn-sm" type="button" id="btn-upload-photo">Загрузить фото</button>
+              <button class="btn btn-sm btn-danger" type="button" id="btn-delete-photo" style="display:none;">Удалить фото</button>
+            </div>
+          </div>
+          <input type="hidden" id="p-photo-path" name="photo_path" value="" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" data-close="modal-person">Отмена</button>
+          <button class="btn btn-primary" type="submit" id="btn-person-submit">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: relationship -->
+  <div class="modal-overlay hidden" id="modal-relation">
+    <div class="modal" role="dialog" aria-labelledby="modal-relation-title">
+      <h2 id="modal-relation-title">Новая связь</h2>
+      <form id="form-relation">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="r-type">Тип связи</label>
+            <select class="select" id="r-type" name="relation_type">
+              <option value="parent_of">Родитель → ребёнок</option>
+              <option value="spouse_of">Супруги</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="r-person" id="r-person-label">Родитель / Первый</label>
+            <select class="select" id="r-person" name="person_id" required></select>
+          </div>
+          <div class="field full">
+            <label for="r-related" id="r-related-label">Ребёнок / Второй</label>
+            <select class="select" id="r-related" name="related_person_id" required></select>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" data-close="modal-relation">Отмена</button>
+          <button class="btn btn-primary" type="submit">Создать связь</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: path -->
+  <div class="modal-overlay hidden" id="modal-path">
+    <div class="modal" role="dialog" aria-labelledby="modal-path-title">
+      <h2 id="modal-path-title">Путь родства</h2>
+      <form id="form-path">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="path-from">От</label>
+            <select class="select" id="path-from" required></select>
+          </div>
+          <div class="field full">
+            <label for="path-to">До</label>
+            <select class="select" id="path-to" required></select>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" data-close="modal-path">Отмена</button>
+          <button class="btn btn-primary" type="submit">Найти путь</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toasts"></div>
+  <script src="/static/js/app.js" type="module"></script>
+</body>
+</html>
