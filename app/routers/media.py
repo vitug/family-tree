@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import require_edit_token
+from app.routers.auth import require_edit_token
 from app.config import settings
 from app.database import get_db
 from app.models import Media, Person

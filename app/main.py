@@ -38,6 +38,7 @@ app.include_router(tree.router, prefix="/api/v1")
 app.include_router(import_data.router, prefix="/api/v1")
 app.include_router(export_data.router, prefix="/api/v1")
 app.include_router(media.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")

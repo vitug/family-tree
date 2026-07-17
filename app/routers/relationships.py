@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.auth import require_edit_token
+from app.routers.auth import require_edit_token
 from app.database import get_db
 from app.schemas import RelationshipCreate, RelationshipRead
 from app.services.tree_service import TreeService
