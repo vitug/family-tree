@@ -44,6 +44,8 @@ async function api(path, options = {}) {
   if (!(body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
+  // Добавить токен редактирования, если он есть (только при запросах, где предполагается изменение)
+  // Но здесь не знаем, изменяется ли или нет. Будем добавлять токен только в явно edit-запросах на клиенте.
   const res = await fetch(`${API}${path}`, {
     headers,
     ...options,
@@ -463,7 +465,7 @@ async function onSavePerson(e) {
   try {
     let person;
     if (editId) {
-      person = await api(`/persons/${editId}`, {
+      person = await apiWithToken(`/persons/${editId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       });
@@ -482,7 +484,7 @@ async function onSavePerson(e) {
         $("#btn-delete-photo").style.display = "none";
       }
     } else {
-      person = await api("/persons", { method: "POST", body: JSON.stringify(body) });
+      person = await apiWithToken("/persons", { method: "POST", body: JSON.stringify(body) });
       toast(`Добавлен: ${person.full_name}`);
     }
     closeModal("modal-person");
@@ -506,7 +508,7 @@ async function onCreateRelation(e) {
   };
 
   try {
-    await api("/relationships", { method: "POST", body: JSON.stringify(body) });
+    await apiWithToken("/relationships", { method: "POST", body: JSON.stringify(body) });
     toast("Связь создана");
     closeModal("modal-relation");
     form.reset();
@@ -616,6 +618,44 @@ async function onImportGramps(e) {
   form.append("file", file);
 
   try {
+    const data = await fetchWithToken(`${API}/import/gramps?replace=${replace ? "true" : "false"}`, {
+      method: "POST",
+      body: form,
+    });
+    toast(data.message || "Импорт завершён");
+    if (data.warnings?.length) {
+      console.warn("Gramps import warnings:", data.warnings);
+      toast(`Предупреждений: ${data.warnings.length} (см. консоль)`, "error");
+    }
+    state.selectedId = null;
+    el.detail.classList.add("hidden");
+    await loadPeople(el.search.value.trim());
+    if (state.people.length) {
+      await selectPerson(state.people[0].id);
+    } else {
+      el.canvas.classList.add("hidden");
+      el.empty.classList.remove("hidden");
+    }
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+  const input = e.target;
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+
+  const proceed = confirm(`Импортировать файл «${file.name}» из Gramps?`);
+  if (!proceed) return;
+
+  const replace = confirm(
+    "Заменить текущее дерево?\n\nOK — очистить базу и импортировать\nОтмена — добавить к существующим данным"
+  );
+
+  const form = new FormData();
+  form.append("file", file);
+
+  try {
     const res = await fetch(`${API}/import/gramps?replace=${replace ? "true" : "false"}`, {
       method: "POST",
       body: form,
@@ -663,7 +703,7 @@ async function deleteSelectedPerson() {
   if (!confirm(`Удалить «${person?.full_name || id}» и все его связи?`)) return;
 
   try {
-    await api(`/persons/${id}`, { method: "DELETE" });
+    await apiWithToken(`/persons/${id}`, { method: "DELETE" });
     toast("Человек удалён");
     el.detail.classList.add("hidden");
     if (state.selectedId === id) {
@@ -706,7 +746,7 @@ async function onPhotoFileSelected(e) {
   const form = new FormData();
   form.append("file", file);
   try {
-    const media = await api(`/persons/${editId}/photo?is_primary=true`, {
+    const media = await apiWithToken(`/persons/${editId}/photo?is_primary=true`, {
       method: "POST",
       body: form,
     });
@@ -729,7 +769,7 @@ async function onDeletePhoto() {
   if (!editId) return;
   if (!confirm("Удалить фото?")) return;
   try {
-    await api(`/persons/${editId}/photo/all`, { method: "DELETE" });
+    await apiWithToken(`/persons/${editId}/photo/all`, { method: "DELETE" });
     toast("Фото удалено");
     // скрыть превью
     $("#photo-preview").style.display = "none";

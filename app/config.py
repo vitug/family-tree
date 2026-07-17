@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     max_tree_depth: int = 20
     media_dir: str = str(PROJECT_ROOT / "media")
     obsidian_export_dir: str = str(PROJECT_ROOT / "export" / "obsidian")
+    edit_token: str = "secret"
 
 
 settings = Settings()

@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.config import settings
 from app.database import init_db
-from app.routers import export_data, import_data, media, persons, relationships, tree
+from app.routers import auth, export_data, import_data, media, persons, relationships, tree
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 MEDIA_DIR = Path(settings.media_dir)

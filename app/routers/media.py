@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import require_edit_token
 from app.config import settings
 from app.database import get_db
 from app.models import Media, Person
@@ -41,7 +42,7 @@ def _person_photo_dir(person_id: int) -> Path:
     return pdir
 
 
-@router.post("/{person_id}/photo", response_model=MediaRead, status_code=201)
+@router.post("/{person_id}/photo", response_model=MediaRead, status_code=201, dependencies=[Depends(require_edit_token)])
 async def upload_person_photo(
     person: Annotated[Person, Depends(get_person)],
     is_primary: bool = Query(True, description="Сделать этот фото основным"),
@@ -91,7 +92,7 @@ async def upload_person_photo(
     return media
 
 
-@router.delete("/{person_id}/photo/all", status_code=204)
+@router.delete("/{person_id}/photo/all", status_code=204, dependencies=[Depends(require_edit_token)])
 async def delete_person_all_photos(
     person: Annotated[Person, Depends(get_person)],
     db: Session = Depends(get_db),

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.auth import require_edit_token
 from app.database import get_db
 from app.schemas import RelationshipCreate, RelationshipRead
 from app.services.tree_service import TreeService
@@ -12,7 +13,15 @@ def get_service(db: Session = Depends(get_db)) -> TreeService:
     return TreeService(db)
 
 
-@router.post("", response_model=RelationshipRead, status_code=201)
+@router.get("", response_model=list[RelationshipRead])
+def list_relationships(
+    person_id: int | None = Query(None, description="Фильтр по участнику связи"),
+    service: TreeService = Depends(get_service),
+) -> list[RelationshipRead]:
+    return service.list_relationships(person_id=person_id)
+
+
+@router.post("", response_model=RelationshipRead, status_code=201, dependencies=[Depends(require_edit_token)])
 def create_relationship(
     data: RelationshipCreate,
     service: TreeService = Depends(get_service),
@@ -25,15 +34,7 @@ def create_relationship(
     return service.add_relationship(data)
 
 
-@router.get("", response_model=list[RelationshipRead])
-def list_relationships(
-    person_id: int | None = Query(None, description="Фильтр по участнику связи"),
-    service: TreeService = Depends(get_service),
-) -> list[RelationshipRead]:
-    return service.list_relationships(person_id=person_id)
-
-
-@router.delete("/{relationship_id}", status_code=204)
+@router.delete("/{relationship_id}", status_code=204, dependencies=[Depends(require_edit_token)])
 def delete_relationship(
     relationship_id: int,
     service: TreeService = Depends(get_service),
