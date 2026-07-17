@@ -1,3 +1,5 @@
+import logging
+import sys
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,6 +17,14 @@ class Settings(BaseSettings):
     media_dir: str = str(PROJECT_ROOT / "media")
     obsidian_export_dir: str = str(PROJECT_ROOT / "export" / "obsidian")
     edit_token: str = "secret"
+    log_level: str = "INFO"
 
 
 settings = Settings()
+
+# Настроить базовое логирование
+logging.basicConfig(
+    level=settings.log_level.upper(),
+    format="[%(asctime)s] %(levelname)-8s [%(process)d] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stderr)],
+)

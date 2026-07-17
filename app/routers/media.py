@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+import logging
 
 from app.routers.auth import require_edit_token
 from app.config import settings
@@ -12,6 +13,7 @@ from app.models import Media, Person
 from app.schemas import MediaRead
 
 router = APIRouter(prefix="/persons", tags=["media"])
+logger = logging.getLogger(__name__)
 
 
 def get_person(person_id: int, db: Session = Depends(get_db)) -> Person:
@@ -55,6 +57,7 @@ async def upload_person_photo(
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустой файл")
 
+    logger.info("Upload photo for person_id=%d size=%d bytes", person.id, len(content))
     ext_map = {
         "image/jpeg": ".jpg",
         "image/png": ".png",

@@ -70,6 +70,75 @@ async function api(path, options = {}) {
   return data;
 }
 
+// ── Edit token handling ─────────────────────────────────────
+
+async function ensureEditToken() {
+  if (state.editToken) return true;
+  const token = prompt(
+    "Введите токен редактирования (указан в конфиге службы, по умолчанию 'secret')"
+  );
+  if (token === null) return false;
+  const trimmed = token.trim();
+  if (!trimmed) return false;
+  // Проверка сервером
+  try {
+    const valid = await api("/auth/verify-edit-token", {
+      method: "POST",
+      headers: { "X-Edit-Token": trimmed },
+    });
+    if (!valid.valid) {
+      toast("Неверный токен редактирования", "error");
+      return false;
+    }
+    state.editToken = trimmed;
+    localStorage.setItem("editToken", trimmed);
+    toast("Токен принят");
+    return true;
+  } catch (e) {
+    toast(e.message || "Проверка токена не удалась", "error");
+    return false;
+  }
+}
+
+async function apiWithToken(path, options = {}) {
+  if (!(await ensureEditToken())) {
+    throw new Error("Требуется верный токен редактирования");
+  }
+  const headers = (options.headers = options.headers || {});
+  headers["X-Edit-Token"] = state.editToken;
+  return api(path, options);
+}
+
+// ── Functions for fetch with token (FormData support without JSON parsing) ----------
+async function fetchWithToken(url, init = {}) {
+  if (!(await ensureEditToken())) {
+    throw new Error("Требуется верный токен редактирования");
+  }
+  init = init || {};
+  const headers = new Headers(init.headers || {});
+  headers.set("X-Edit-Token", state.editToken);
+  init.headers = headers;
+  const res = await fetch(url, init);
+  if (res.status === 204) return null;
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { detail: text };
+  }
+  if (!res.ok) {
+    const msg =
+      typeof data?.detail === "string"
+        ? data.detail
+        : Array.isArray(data?.detail)
+          ? data.detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
+          : `Ошибка ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
 // ── UI helpers ─────────────────────────────────────────
 
 function toast(message, type = "success") {
@@ -622,61 +691,6 @@ async function onImportGramps(e) {
       method: "POST",
       body: form,
     });
-    toast(data.message || "Импорт завершён");
-    if (data.warnings?.length) {
-      console.warn("Gramps import warnings:", data.warnings);
-      toast(`Предупреждений: ${data.warnings.length} (см. консоль)`, "error");
-    }
-    state.selectedId = null;
-    el.detail.classList.add("hidden");
-    await loadPeople(el.search.value.trim());
-    if (state.people.length) {
-      await selectPerson(state.people[0].id);
-    } else {
-      el.canvas.classList.add("hidden");
-      el.empty.classList.remove("hidden");
-    }
-  } catch (err) {
-    toast(err.message, "error");
-  }
-}
-  const input = e.target;
-  const file = input.files && input.files[0];
-  input.value = "";
-  if (!file) return;
-
-  const proceed = confirm(`Импортировать файл «${file.name}» из Gramps?`);
-  if (!proceed) return;
-
-  const replace = confirm(
-    "Заменить текущее дерево?\n\nOK — очистить базу и импортировать\nОтмена — добавить к существующим данным"
-  );
-
-  const form = new FormData();
-  form.append("file", file);
-
-  try {
-    const res = await fetch(`${API}/import/gramps?replace=${replace ? "true" : "false"}`, {
-      method: "POST",
-      body: form,
-    });
-    const text = await res.text();
-    let data;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = { detail: text };
-    }
-    if (!res.ok) {
-      const msg =
-        typeof data?.detail === "string"
-          ? data.detail
-          : Array.isArray(data?.detail)
-            ? data.detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
-            : `Ошибка ${res.status}`;
-      throw new Error(msg);
-    }
-
     toast(data.message || "Импорт завершён");
     if (data.warnings?.length) {
       console.warn("Gramps import warnings:", data.warnings);
