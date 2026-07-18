@@ -1,4 +1,5 @@
 import logging
+import secrets
 import sys
 from pathlib import Path
 
@@ -16,7 +17,15 @@ class Settings(BaseSettings):
     max_tree_depth: int = 20
     media_dir: str = str(PROJECT_ROOT / "media")
     obsidian_export_dir: str = str(PROJECT_ROOT / "export" / "obsidian")
+    
+    # JWT настройки
+    jwt_secret_key: str = secrets.token_urlsafe(32)  # Автоматически генерируется
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_hours: int = 24
+    
+    # Legacy edit token для обратной совместимости (используется only для входа)
     edit_token: str = "secret"
+    
     log_level: str = "INFO"
 
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 import logging
 
-from app.routers.auth import require_edit_token
+from app.routers.auth import require_jwt_token
 from app.database import get_db
 from app.schemas import PersonCreate, PersonRead, PersonUpdate
 from app.services.tree_service import TreeService
@@ -32,7 +32,7 @@ def get_person(person_id: int, service: TreeService = Depends(get_service)) -> P
     return service.get_person(person_id)
 
 
-@router.post("", response_model=PersonRead, status_code=201, dependencies=[Depends(require_edit_token)])
+@router.post("", response_model=PersonRead, status_code=201, dependencies=[Depends(require_jwt_token)])
 def create_person(data: PersonCreate, service: TreeService = Depends(get_service)) -> PersonRead:
     logger.info("Create person: %s %s", data.first_name, data.last_name or "")
     person = service.create_person(data)
@@ -40,7 +40,7 @@ def create_person(data: PersonCreate, service: TreeService = Depends(get_service
     return person
 
 
-@router.patch("/{person_id}", response_model=PersonRead, dependencies=[Depends(require_edit_token)])
+@router.patch("/{person_id}", response_model=PersonRead, dependencies=[Depends(require_jwt_token)])
 def update_person(
     person_id: int,
     data: PersonUpdate,
@@ -48,7 +48,7 @@ def update_person(
 ) -> PersonRead:
     logger.info("Update person id=%d", person_id)
     return service.update_person(person_id, data)
-@router.delete("/{person_id}", status_code=204, dependencies=[Depends(require_edit_token)])
+@router.delete("/{person_id}", status_code=204, dependencies=[Depends(require_jwt_token)])
 def delete_person(person_id: int, service: TreeService = Depends(get_service)) -> None:
     logger.info("Delete person id=%d", person_id)
     service.delete_person(person_id)

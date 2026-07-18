@@ -4,6 +4,109 @@
 
 const API = "/api/v1";
 
+// ── JWT token handling ─────────────────────────────────────
+
+// Менеджер JWT токенов
+const jwtManager = {
+  accessToken: null,
+  tokenExpiry: null,
+
+  // Инициализация из localStorage
+  init() {
+    const savedToken = localStorage.getItem("jwtAccessToken");
+    const savedExpiry = localStorage.getItem("jwtTokenExpiry");
+    if (savedToken && savedExpiry) {
+      this.accessToken = savedToken;
+      this.tokenExpiry = parseInt(savedExpiry, 10);
+    }
+  },
+
+  // Сохранение токена
+  saveToken(token, expiresIn) {
+    this.accessToken = token;
+    const now = Date.now();
+    this.tokenExpiry = now + (expiresIn * 1000); // expiresIn в секундах
+    
+    localStorage.setItem("jwtAccessToken", token);
+    localStorage.setItem("jwtTokenExpiry", this.tokenExpiry.toString());
+    
+    // Запланировать обновление за 5 минут до истечения
+    const refreshIn = Math.max((expiresIn - 300) * 1000, 0);
+    setTimeout(() => this.refreshTokenIfNeeded(), refreshIn);
+  },
+
+  // Проверка валидности токена
+  isTokenValid() {
+    if (!this.accessToken || !this.tokenExpiry) return false;
+    return Date.now() < this.tokenExpiry;
+  },
+
+  // Очистка токена
+  clearToken() {
+    this.accessToken = null;
+    this.tokenExpiry = null;
+    localStorage.removeItem("jwtAccessToken");
+    localStorage.removeItem("jwtTokenExpiry");
+  },
+
+  // Получение токена авторизации для заголовков
+  getAuthHeader() {
+    if (!this.isTokenValid()) return null;
+    return `Bearer ${this.accessToken}`;
+  },
+
+  // Вход с использованием edit_token
+  async loginWithEditToken(editToken) {
+    try {
+      const response = await api("/auth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ edit_token: editToken.trim() }),
+      });
+      
+      this.saveToken(response.access_token, response.expires_in);
+      toastJWT("Авторизация успешна", "success");
+      return true;
+    } catch (e) {
+      toastJWT("Неверный токен редактирования", "error");
+      return false;
+    }
+  },
+
+  // Обновление токена
+  async refreshToken() {
+    try {
+      const response = await api("/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: this.accessToken }),
+      });
+      
+      this.saveToken(response.access_token, response.expires_in);
+      toastJWT("Токен обновлён", "success");
+      return true;
+    } catch (e) {
+      console.error("Ошибка обновления токена:", e);
+      // Токен истёк или недействителен
+      this.clearToken();
+      toastJWT("Сессия истекла. Войдите заново.", "error");
+      return false;
+    }
+  },
+
+  // Проверка и обновление токена при необходимости
+  async refreshTokenIfNeeded() {
+    if (!this.isTokenValid() || this.tokenExpiry - Date.now() < 300000) { // 5 минут
+      console.log("Обновление токена...");
+      return await this.refreshToken();
+    }
+    return true;
+  }
+};
+
+// Инициализация jwtManager при загрузке
+jwtManager.init();
+
 const state = {
   people: [],
   selectedId: null,
@@ -11,9 +114,8 @@ const state = {
   depthUp: 2,
   depthDown: 2,
   editingPersonId: null, // null = create, number = edit
+  isAuthenticated: jwtManager.isTokenValid(),
 };
-
-// ── DOM ────────────────────────────────────────────────
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -21,6 +123,8 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const el = {
   personList: $("#person-list"),
   search: $("#search"),
+  toggleSidebar: $("#btn-toggle-sidebar"),
+  sidebar: $(".sidebar"),
   viewArea: $("#view-area"),
   empty: $("#empty-state"),
   canvas: $("#tree-canvas"),
@@ -70,53 +174,66 @@ async function api(path, options = {}) {
   return data;
 }
 
-// ── Edit token handling ─────────────────────────────────────
+// Уведомления для JWT (избегаем конфликта с другими функциями toast)
+function toastJWT(message, type = "success") {
+  const existingToast = document.querySelector(".jwt-toast");
+  if (existingToast) existingToast.remove();
 
-async function ensureEditToken() {
-  if (state.editToken) return true;
-  const token = prompt(
-    "Введите токен редактирования (указан в конфиге службы, по умолчанию 'secret')"
-  );
-  if (token === null) return false;
-  const trimmed = token.trim();
-  if (!trimmed) return false;
-  // Проверка сервером
-  try {
-    const valid = await api("/auth/verify-edit-token", {
-      method: "POST",
-      headers: { "X-Edit-Token": trimmed },
-    });
-    if (!valid.valid) {
-      toast("Неверный токен редактирования", "error");
-      return false;
-    }
-    state.editToken = trimmed;
-    localStorage.setItem("editToken", trimmed);
-    toast("Токен принят");
-    return true;
-  } catch (e) {
-    toast(e.message || "Проверка токена не удалась", "error");
-    return false;
-  }
+  const node = document.createElement("div");
+  node.className = `toast jwt-toast ${type}`;
+  node.textContent = message;
+  node.style.position = "fixed";
+  node.style.top = "20px";
+  node.style.left = "50%";
+  node.style.transform = "translateX(-50%)";
+  node.style.zIndex = "9999";
+  document.body.appendChild(node);
+  
+  setTimeout(() => node.remove(), 3000);
 }
 
-async function apiWithToken(path, options = {}) {
-  if (!(await ensureEditToken())) {
-    throw new Error("Требуется верный токен редактирования");
+// Обновленная функция обеспечения JWT токена
+async function ensureJWToken() {
+  if (jwtManager.isTokenValid()) {
+    return await jwtManager.refreshTokenIfNeeded();
   }
+  
+  const editToken = prompt(
+    "Введите токен редактирования (указан в конфиге службы, по умолчанию 'secret')"
+  );
+  if (editToken === null) return false;
+  const trimmed = editToken.trim();
+  if (!trimmed) return false;
+  
+  return await jwtManager.loginWithEditToken(trimmed);
+}
+
+// Обновленная функция API с JWT
+async function apiWithJWT(path, options = {}) {
+  if (!(await ensureJWToken())) {
+    throw new Error("Требуется авторизация");
+  }
+  
   const headers = (options.headers = options.headers || {});
-  headers["X-Edit-Token"] = state.editToken;
+  const authHeader = jwtManager.getAuthHeader();
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  }
+  
   return api(path, options);
 }
 
-// ── Functions for fetch with token (FormData support without JSON parsing) ----------
-async function fetchWithToken(url, init = {}) {
-  if (!(await ensureEditToken())) {
-    throw new Error("Требуется верный токен редактирования");
+// ── Functions for fetch with JWT token (FormData support without JSON parsing) ----------
+async function fetchWithJWT(url, init = {}) {
+  if (!(await ensureJWToken())) {
+    throw new Error("Требуется авторизация");
   }
   init = init || {};
   const headers = new Headers(init.headers || {});
-  headers.set("X-Edit-Token", state.editToken);
+  const authHeader = jwtManager.getAuthHeader();
+  if (authHeader) {
+    headers.set("Authorization", authHeader);
+  }
   init.headers = headers;
   const res = await fetch(url, init);
   if (res.status === 204) return null;
@@ -534,7 +651,7 @@ async function onSavePerson(e) {
   try {
     let person;
     if (editId) {
-      person = await apiWithToken(`/persons/${editId}`, {
+      person = await apiWithJWT(`/persons/${editId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       });
@@ -553,7 +670,7 @@ async function onSavePerson(e) {
         $("#btn-delete-photo").style.display = "none";
       }
     } else {
-      person = await apiWithToken("/persons", { method: "POST", body: JSON.stringify(body) });
+      person = await apiWithJWT("/persons", { method: "POST", body: JSON.stringify(body) });
       toast(`Добавлен: ${person.full_name}`);
     }
     closeModal("modal-person");
@@ -577,7 +694,7 @@ async function onCreateRelation(e) {
   };
 
   try {
-    await apiWithToken("/relationships", { method: "POST", body: JSON.stringify(body) });
+    await apiWithJWT("/relationships", { method: "POST", body: JSON.stringify(body) });
     toast("Связь создана");
     closeModal("modal-relation");
     form.reset();
@@ -687,7 +804,7 @@ async function onImportGramps(e) {
   form.append("file", file);
 
   try {
-    const data = await fetchWithToken(`${API}/import/gramps?replace=${replace ? "true" : "false"}`, {
+    const data = await fetchWithJWT(`${API}/import/gramps?replace=${replace ? "true" : "false"}`, {
       method: "POST",
       body: form,
     });
@@ -717,7 +834,7 @@ async function deleteSelectedPerson() {
   if (!confirm(`Удалить «${person?.full_name || id}» и все его связи?`)) return;
 
   try {
-    await apiWithToken(`/persons/${id}`, { method: "DELETE" });
+    await apiWithJWT(`/persons/${id}`, { method: "DELETE" });
     toast("Человек удалён");
     el.detail.classList.add("hidden");
     if (state.selectedId === id) {
@@ -760,7 +877,7 @@ async function onPhotoFileSelected(e) {
   const form = new FormData();
   form.append("file", file);
   try {
-    const media = await apiWithToken(`/persons/${editId}/photo?is_primary=true`, {
+    const media = await apiWithJWT(`/persons/${editId}/photo?is_primary=true`, {
       method: "POST",
       body: form,
     });
@@ -783,7 +900,7 @@ async function onDeletePhoto() {
   if (!editId) return;
   if (!confirm("Удалить фото?")) return;
   try {
-    await apiWithToken(`/persons/${editId}/photo/all`, { method: "DELETE" });
+    await apiWithJWT(`/persons/${editId}/photo/all`, { method: "DELETE" });
     toast("Фото удалено");
     // скрыть превью
     $("#photo-preview").style.display = "none";
@@ -823,6 +940,15 @@ function bindEvents() {
     if (item) selectPerson(Number(item.dataset.id), { openDetail: true });
   });
 
+  // Add touch support for mobile devices
+  el.personList.addEventListener("touchend", (e) => {
+    const item = e.target.closest(".person-item");
+    if (item) {
+      e.preventDefault(); // Prevent click event from firing
+      selectPerson(Number(item.dataset.id), { openDetail: true });
+    }
+  });
+
   el.personList.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const item = e.target.closest(".person-item");
@@ -832,6 +958,15 @@ function bindEvents() {
   el.canvas.addEventListener("click", (e) => {
     const card = e.target.closest(".person-card");
     if (card) showDetail(Number(card.dataset.id));
+  });
+
+  // Add touch support for tree cards
+  el.canvas.addEventListener("touchend", (e) => {
+    const card = e.target.closest(".person-card");
+    if (card) {
+      e.preventDefault(); // Prevent click event from firing
+      showDetail(Number(card.dataset.id));
+    }
   });
 
   el.detailRel.addEventListener("click", (e) => {
@@ -928,6 +1063,110 @@ function bindEvents() {
       $$(".modal-overlay:not(.hidden)").forEach((m) => m.classList.add("hidden"));
     }
   });
+
+  // Mobile sidebar toggle
+  const btnToggleSidebar = document.getElementById("btn-toggle-sidebar");
+  const sidebar = document.querySelector(".sidebar");
+
+  if (btnToggleSidebar && sidebar) {
+    let isCollapsed = false;
+
+    // Don't collapse by default even on mobile
+    btnToggleSidebar.addEventListener("click", () => {
+      isCollapsed = !isCollapsed;
+      sidebar.classList.toggle("collapsed", isCollapsed);
+      btnToggleSidebar.style.opacity = isCollapsed ? "0.6" : "1";
+    });
+  }
+
+  // Auth UI
+  const authStatus = document.getElementById("auth-status");
+  const btnAuth = document.getElementById("btn-auth");
+  
+  function updateAuthUI() {
+    const isAuthenticated = jwtManager.isTokenValid();
+    state.isAuthenticated = isAuthenticated;
+    
+    if (authStatus) {
+      if (isAuthenticated) {
+        authStatus.innerHTML = `<span class="auth-indicator auth-indicator--active"></span>`;
+        authStatus.title = "Авторизован";
+      } else {
+        authStatus.innerHTML = `<span class="auth-indicator auth-indicator--inactive"></span>`;
+        authStatus.title = "Не авторизован";
+      }
+    }
+    
+    if (btnAuth) {
+      btnAuth.textContent = isAuthenticated ? "🚪" : "🔐";
+      btnAuth.title = isAuthenticated ? "Выйти" : "Войти";
+    }
+  }
+  
+  async function handleAuthClick() {
+    const isAuthenticated = jwtManager.isTokenValid();
+    
+    if (isAuthenticated) {
+      // Выход
+      if (confirm("Выйти из системы?")) {
+        jwtManager.clearToken();
+        updateAuthUI();
+        toastJWT("Вы вышли из системы", "success");
+      }
+    } else {
+      // Вход
+      const editToken = prompt("Введите токен редактирования:");
+      if (editToken === null) return;
+      
+      const success = await jwtManager.loginWithEditToken(editToken.trim());
+      if (success) {
+        updateAuthUI();
+      }
+    }
+  }
+  
+  if (btnAuth) {
+    btnAuth.addEventListener("click", handleAuthClick);
+  }
+  
+  // Обновляем UI при загрузке
+  updateAuthUI();
+  
+  // Следим за изменением статуса токена
+  setInterval(updateAuthUI, 60000); // Каждую минуту
+  
+  // Добавляем CSS для индикаторов авторизации
+  const style = document.createElement("style");
+  style.textContent = `
+    .auth-section {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .auth-status {
+      display: flex;
+      align-items: center;
+    }
+    
+    .auth-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    
+    .auth-indicator--active {
+      background-color: #4CAF50;
+      box-shadow: 0 0 4px #4CAF50;
+    }
+    
+    .auth-indicator--inactive {
+      background-color: #f44336;
+      box-shadow: 0 0 4px #f44336;
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 // ── Init ───────────────────────────────────────────────

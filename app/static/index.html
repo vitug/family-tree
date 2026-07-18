@@ -10,6 +10,9 @@
   <div class="app">
     <header class="header">
       <div class="logo">
+        <button class="btn btn-ghost" id="btn-toggle-sidebar" type="button" title="Показать/скрыть список людей">
+          <span>☰</span>
+        </button>
         <div class="logo-icon">🌳</div>
         <span>Семейное дерево</span>
       </div>
@@ -19,7 +22,12 @@
         <button class="btn btn-ghost" id="btn-import" type="button">Импорт Gramps</button>
         <button class="btn btn-ghost" id="btn-export-obsidian" type="button">Экспорт Obsidian</button>
         <button class="btn btn-ghost" id="btn-path" type="button">Путь родства</button>
-        <input type="file" id="file-gramps" accept=".gpkg,.gramps,.xml,application/gzip,application/xml" hidden />
+        
+        <div class="auth-section">
+          <div id="auth-status" class="auth-status"></div>
+          <button class="btn btn-ghost btn-sm" id="btn-auth" type="button" title="Вход/Выход"></button>
+          <input type="file" id="file-gramps" accept=".gpkg,.gramps,.xml,application/gzip,application/xml" hidden />
+        </div>
       </div>
     </header>
 

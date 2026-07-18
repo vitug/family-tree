@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.routers.auth import require_edit_token
+from app.routers.auth import require_jwt_token
 from app.database import get_db
 from app.services.gramps_import import GrampsImporter
 
@@ -22,7 +22,7 @@ class GrampsImportResult(BaseModel):
     message: str
 
 
-@router.post("/gramps", response_model=GrampsImportResult, dependencies=[Depends(require_edit_token)])
+@router.post("/gramps", response_model=GrampsImportResult, dependencies=[Depends(require_jwt_token)])
 async def import_gramps(
     file: UploadFile = File(..., description="Файл .gpkg или .gramps"),
     replace: bool = Query(
