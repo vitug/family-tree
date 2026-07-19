@@ -23,8 +23,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_hours: int = 24
     
-    # Legacy edit token для обратной совместимости (используется only для входа)
-    edit_token: str = "secret"
+    # Токены авторизации для разных уровней доступа
+    view_token: str = "family"      # Для чтения данных (viewer роль)
+    edit_token: str = "secret"      # Для чтения и записи (editor роль)
     
     log_level: str = "INFO"
 

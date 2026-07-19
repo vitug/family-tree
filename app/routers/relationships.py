@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 import logging
 
-from app.routers.auth import require_jwt_token
+from app.routers.auth import require_jwt_token, require_editor_token
 from app.database import get_db
 from app.schemas import RelationshipCreate, RelationshipRead
 from app.services.tree_service import TreeService
@@ -24,7 +24,7 @@ def list_relationships(
     return service.list_relationships(person_id=person_id)
 
 
-@router.post("", response_model=RelationshipRead, status_code=201, dependencies=[Depends(require_jwt_token)])
+@router.post("", response_model=RelationshipRead, status_code=201, dependencies=[Depends(require_editor_token)])
 def create_relationship(
     data: RelationshipCreate,
     service: TreeService = Depends(get_service),
@@ -38,7 +38,7 @@ def create_relationship(
     return service.add_relationship(data)
 
 
-@router.delete("/{relationship_id}", status_code=204, dependencies=[Depends(require_jwt_token)])
+@router.delete("/{relationship_id}", status_code=204, dependencies=[Depends(require_editor_token)])
 def delete_relationship(
     relationship_id: int,
     service: TreeService = Depends(get_service),

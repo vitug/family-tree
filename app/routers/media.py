@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 import logging
 
-from app.routers.auth import require_jwt_token
+from app.routers.auth import require_jwt_token, require_editor_token
 from app.config import settings
 from app.database import get_db
 from app.models import Media, Person
@@ -44,7 +44,7 @@ def _person_photo_dir(person_id: int) -> Path:
     return pdir
 
 
-@router.post("/{person_id}/photo", response_model=MediaRead, status_code=201, dependencies=[Depends(require_jwt_token)])
+@router.post("/{person_id}/photo", response_model=MediaRead, status_code=201, dependencies=[Depends(require_editor_token)])
 async def upload_person_photo(
     person: Annotated[Person, Depends(get_person)],
     is_primary: bool = Query(True, description="Сделать этот фото основным"),
@@ -95,7 +95,7 @@ async def upload_person_photo(
     return media
 
 
-@router.delete("/{person_id}/photo/all", status_code=204, dependencies=[Depends(require_jwt_token)])
+@router.delete("/{person_id}/photo/all", status_code=204, dependencies=[Depends(require_editor_token)])
 async def delete_person_all_photos(
     person: Annotated[Person, Depends(get_person)],
     db: Session = Depends(get_db),
@@ -107,7 +107,7 @@ async def delete_person_all_photos(
     # TODO: очистить файлы на диске асинхронно
 
 
-@router.delete("/{person_id}/photo/{media_id}", status_code=204)
+@router.delete("/{person_id}/photo/{media_id}", status_code=204, dependencies=[Depends(require_editor_token)])
 async def delete_person_photo(
     person: Annotated[Person, Depends(get_person)],
     media_id: int,

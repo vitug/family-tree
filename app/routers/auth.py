@@ -20,14 +20,15 @@ security = HTTPBearer()
 # ── Pydantic модели ──────────────────────────────────────────────────────
 
 class TokenRequest(BaseModel):
-    """Запрос на токен с legacy edit token."""
-    edit_token: str
+    """Запрос на токен с view token или edit token."""
+    token: str
 
 class TokenResponse(BaseModel):
     """Ответ с JWT токеном."""
     access_token: str
     token_type: str = "bearer"
     expires_in: int  # секунды до истечения
+    role: str  # "viewer" или "editor"
 
 class TokenRefreshRequest(BaseModel):
     """Запрос на обновление токена."""
@@ -87,12 +88,32 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # Проверка роли
+    role = payload.get("role")
+    if role not in ["viewer", "editor"]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверная роль пользователя",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     return payload
 
 async def require_jwt_token(
     current_user: dict = Depends(get_current_user)
 ) -> dict:
-    """Требовать валидный JWT токен для доступа."""
+    """Требовать валидный JWT токен для доступа (минимальная роль: viewer)."""
+    return current_user
+
+async def require_editor_token(
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Требовать валидный JWT токен с ролью editor для доступа."""
+    if current_user.get("role") != "editor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Требуются права редактирования (editor role)",
+        )
     return current_user
 
 # ── Legacy для обратной совместимости ───────────────────────────────────────
@@ -149,24 +170,39 @@ async def verify_edit_token(request: Request) -> dict[str, bool]:
 
 @router.post("/token", response_model=TokenResponse)
 async def login_with_token(request_data: TokenRequest) -> TokenResponse:
-    """Получить JWT токен в обмен на edit token.
+    """Получить JWT токен в обмен на view token или edit token.
     
-    Client должен отправить edit token и получить JWT токен для дальнейших запросов.
+    - view token даёт роль "viewer" (только чтение)
+    - edit token даёт роль "editor" (чтение и запись)
     """
     logger.info("Login attempt")
+    logger.info(f"Received token: {repr(request_data.token)}")
+    logger.info(f"View token: {repr(settings.view_token)}")
+    logger.info(f"Edit token: {repr(settings.edit_token)}")
     
-    # Проверка edit token
-    if request_data.edit_token != settings.edit_token:
-        logger.warning("Invalid edit token for login")
+    # Удаляем лишние пробелы из настроек
+    clean_view_token = settings.view_token.strip()
+    clean_edit_token = settings.edit_token.strip()
+    clean_user_token = request_data.token.strip()
+    
+    # Проверка токена и определение роли
+    role = None
+    if clean_user_token == clean_view_token:
+        role = "viewer"
+        logger.info("Login successful with view token")
+    elif clean_user_token == clean_edit_token:
+        role = "editor"
+        logger.info("Login successful with edit token")
+    else:
+        logger.warning("Invalid token for login")
+        logger.warning(f"Token comparison failed: {repr(clean_user_token)} != {repr(clean_view_token)} and {repr(clean_user_token)} != {repr(clean_edit_token)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный токен редактирования"
+            detail="Неверный токен авторизации"
         )
     
-    logger.info("Login successful")
-    
-    # Создание JWT токена
-    access_token = create_access_token(data={"sub": "user"})
+    # Создание JWT токена с ролью
+    access_token = create_access_token(data={"sub": "user", "role": role})
     
     # Расчет времени жизни токена в секундах
     expires_in = settings.jwt_access_token_expire_hours * 3600
@@ -174,12 +210,13 @@ async def login_with_token(request_data: TokenRequest) -> TokenResponse:
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        expires_in=expires_in
+        expires_in=expires_in,
+        role=role
     )
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(request_data: TokenRefreshRequest) -> TokenResponse:
-    """Обновить JWT токен (удлинить истечение)."""
+    """Обновить JWT токен (удлинить истечение) с сохранением роли."""
     try:
         # Проверяем старый токен
         payload = decode_access_token(request_data.token)
@@ -190,16 +227,18 @@ async def refresh_token(request_data: TokenRefreshRequest) -> TokenResponse:
                 detail="Неверный тип токена"
             )
         
-        logger.info("Token refresh for user")
+        role = payload.get("role")
+        logger.info(f"Token refresh for user with role: {role}")
         
-        # Создаем новый токен
-        access_token = create_access_token(data={"sub": "user"})
+        # Создаем новый токен с той же ролью
+        access_token = create_access_token(data={"sub": "user", "role": role})
         expires_in = settings.jwt_access_token_expire_hours * 3600
         
         return TokenResponse(
             access_token=access_token,
             token_type="bearer",
-            expires_in=expires_in
+            expires_in=expires_in,
+            role=role
         )
         
     except HTTPException:
@@ -218,8 +257,9 @@ async def get_current_user_info(
 ) -> dict:
     """Получить информацию о текущем пользователе."""
     return {
-        "user": "admin",
-        "sub": current_user.get("sub"),
+        "user": "user",
+        "role": current_user.get("role"),
+        "permissions": "read_write" if current_user.get("role") == "editor" else "read_only",
         "exp": current_user.get("exp"),
         "iat": current_user.get("iat")
     }

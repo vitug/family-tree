@@ -30,6 +30,7 @@ for /f "tokens=*" %%i in ('%PYTHON_CMD% --version 2^>^&1') do echo [Python Versi
 echo.
 
 REM Configuration (can be overridden via environment variables)
+if not defined FAMILY_TREE_VIEW_TOKEN set "FAMILY_TREE_VIEW_TOKEN=family"
 if not defined FAMILY_TREE_EDIT_TOKEN set "FAMILY_TREE_EDIT_TOKEN=secret"
 if not defined FAMILY_TREE_JWT_ACCESS_TOKEN_EXPIRE_HOURS set "FAMILY_TREE_JWT_ACCESS_TOKEN_EXPIRE_HOURS=24"
 if not defined FAMILY_TREE_LOG_LEVEL set "FAMILY_TREE_LOG_LEVEL=info"
@@ -37,7 +38,8 @@ if not defined FAMILY_TREE_HOST set "FAMILY_TREE_HOST=0.0.0.0"
 if not defined FAMILY_TREE_PORT set "FAMILY_TREE_PORT=8000"
 
 echo [Configuration]
-echo   Edit Token: %FAMILY_TREE_EDIT_TOKEN%
+echo   View Token: %FAMILY_TREE_VIEW_TOKEN% (для просмотра данных)
+echo   Edit Token: %FAMILY_TREE_EDIT_TOKEN% (для редактирования данных)
 echo   JWT Token Lifetime: %FAMILY_TREE_JWT_ACCESS_TOKEN_EXPIRE_HOURS% hours
 echo   Log Level: %FAMILY_TREE_LOG_LEVEL%
 echo   Host: %FAMILY_TREE_HOST%

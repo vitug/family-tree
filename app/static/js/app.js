@@ -10,25 +10,31 @@ const API = "/api/v1";
 const jwtManager = {
   accessToken: null,
   tokenExpiry: null,
+  userRole: null, // "viewer" or "editor"
 
   // Инициализация из localStorage
   init() {
     const savedToken = localStorage.getItem("jwtAccessToken");
     const savedExpiry = localStorage.getItem("jwtTokenExpiry");
+    const savedRole = localStorage.getItem("jwtUserRole");
     if (savedToken && savedExpiry) {
       this.accessToken = savedToken;
       this.tokenExpiry = parseInt(savedExpiry, 10);
+      this.userRole = savedRole;
     }
   },
 
   // Сохранение токана
-  saveToken(token, expiresIn) {
+  saveToken(token, expiresIn, role) {
     this.accessToken = token;
+    this.userRole = role;
+    state.userRole = role;
     const now = Date.now();
     this.tokenExpiry = now + (expiresIn * 1000); // expiresIn в секундах
     
     localStorage.setItem("jwtAccessToken", token);
     localStorage.setItem("jwtTokenExpiry", this.tokenExpiry.toString());
+    localStorage.setItem("jwtUserRole", role);
     
     // Запланировать обновление за 5 минут до истечения
     const refreshIn = Math.max((expiresIn - 300) * 1000, 0);
@@ -45,8 +51,11 @@ const jwtManager = {
   clearToken() {
     this.accessToken = null;
     this.tokenExpiry = null;
+    this.userRole = null;
+    state.userRole = null;
     localStorage.removeItem("jwtAccessToken");
     localStorage.removeItem("jwtTokenExpiry");
+    localStorage.removeItem("jwtUserRole");
   },
 
   // Получение токена авторизации для заголовков
@@ -55,20 +64,22 @@ const jwtManager = {
     return `Bearer ${this.accessToken}`;
   },
 
-  // Вход с использованием edit_token
-  async loginWithEditToken(editToken) {
+  // Вход с использованием токена (view token или edit token)
+  async loginWithToken(token) {
     try {
       const response = await api("/auth/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ edit_token: editToken.trim() }),
+        body: JSON.stringify({ token: token.trim() }),
       });
       
-      this.saveToken(response.access_token, response.expires_in);
-      toastJWT("Авторизация успешна", "success");
+      this.saveToken(response.access_token, response.expires_in, response.role);
+      const roleText = response.role === "editor" ? "редактирование" : "просмотр";
+      toastJWT(`✓ Авторизация успешна (${roleText})`, "success");
       return true;
     } catch (e) {
-      toastJWT("Неверный токен редактирования", "error");
+      // toastJWT("Неверный токен авторизации", "error");
+      // Возвращаем false без дополнительных визуальных эффектов
       return false;
     }
   },
@@ -82,7 +93,7 @@ const jwtManager = {
         body: JSON.stringify({ token: this.accessToken }),
       });
       
-      this.saveToken(response.access_token, response.expires_in);
+      this.saveToken(response.access_token, response.expires_in, response.role);
       toastJWT("Токен обновлён", "success");
       return true;
     } catch (e) {
@@ -107,6 +118,46 @@ const jwtManager = {
 // Инициализация jwtManager при загрузке
 jwtManager.init();
 
+// Функция для запроса авторизации при просмотре (глобальная для HTML доступа)
+// Определяем раннее, чтобы быть доступным при загрузке страницы
+window.requestAuth = async function() {
+  state.authRetryCount = 0; // Сбрасываем счетчик попыток при ручном входе
+  
+  const level = prompt("Введите уровень доступа:\n1 - Для просмотра (токен: family по умолчанию)\n2 - Для редактирования (токен: secret по умолчанию)\n\nВведите 1 или 2:");
+  
+  if (level === null) return false;
+  
+  let token = "";
+  let tokenType = "";
+  
+  if (level.trim() === "1") {
+    token = prompt("Введите токен для просмотра (по умолчанию: family):") || "family";
+    tokenType = "просмотр";
+  } else {
+    token = prompt("Введите токен для редактирования (по умолчанию: secret):") || "secret";
+    tokenType = "редактирование";
+  }
+  
+  if (token === null) return false;
+  
+  const trimmed = token.trim();
+  if (!trimmed) {
+    alert("Токен не может быть пустым!");
+    return false;
+  }
+  
+  const success = await jwtManager.loginWithToken(trimmed);
+  if (success) {
+    state.isAuthenticated = true;
+    state.authRetryCount = 0;
+    // Перезагружаем данные
+    loadPeople();
+  } else {
+    alert("❌ Неверный токен авторизации!\n\nПроверьте правильность токена и попробуйте снова.");
+  }
+  return success;
+};
+
 const state = {
   people: [],
   selectedId: null,
@@ -115,6 +166,8 @@ const state = {
   depthDown: 2,
   editingPersonId: null, // null = create, number = edit
   isAuthenticated: jwtManager.isTokenValid(),
+  userRole: jwtManager.userRole, // "viewer" or "editor"
+  authRetryCount: 0, // Счетчик неудачных попыток авторизации
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -161,15 +214,24 @@ async function api(path, options = {}) {
   });
   if (res.status === 204) return null;
   
-  // Обработка 401 Unauthorized - автоматическая попытка авторизации
+  // Обработка 401 Unauthorized - попытка авторизации только если не было недавних неудач
   if (res.status === 401) {
     console.log("401 Unauthorized - требуется авторизация");
+    
+    // Если было много неудачных попыток, показываем только alert без авторизации
+    if (state.authRetryCount > 0) {
+      console.log("Много неудачных попыток, не показываем диалог авторизации");
+      throw new Error("Требуется авторизация для доступа к данным. Перезагрузите страницу или нажмите кнопку входа.");
+    }
+    
+    state.authRetryCount++; // Увеличиваем счетчик неудач
     
     // Если есть токен, пробуем обновить
     if (jwtManager.accessToken) {
       console.log("Пробуем обновить токен...");
       const refreshed = await jwtManager.refreshToken();
       if (refreshed) {
+        state.authRetryCount = 0; // Сбрасываем счетчик при успехе
         // Повторяем запрос с новым токеном
         const newAuthHeader = jwtManager.getAuthHeader();
         if (newAuthHeader) {
@@ -196,26 +258,23 @@ async function api(path, options = {}) {
                 : `Ошибка ${retryRes.status}`;
           throw new Error(msg);
         }
+        state.authRetryCount = 0; // Сбрасываем счетчик при успешном повторе
         return retryData;
       }
     }
     
     // Если токена нет или обновление не помогло - предлагаем авторизоваться
     const authRequired = async () => {
-      const userChoice = confirm("Требуется авторизация для доступа к семейному дереву.\n\nХотите войти с токеном редактирования?");
-      if (userChoice) {
-        const editToken = prompt("Введите токен редактирования:");
-        if (editToken !== null) {
-          const success = await jwtManager.loginWithEditToken(editToken.trim());
-          if (success) {
-            state.isAuthenticated = true;
-            updateAuthUI();
-            // Повторяем исходный запрос
-            return api(path, options);
-          }
-        }
+      // Используем новую функцию ensureJWToken() с выбором уровня доступа
+      const success = await ensureJWToken();
+      if (success) {
+        state.authRetryCount = 0; // Сбрасываем счетчик при успешной авторизации
+        state.isAuthenticated = true;
+        // Повторяем исходный запрос
+        return api(path, options);
+      } else {
+        throw new Error("Требуется авторизация для доступа к данным");
       }
-      throw new Error("Авторизация отменена или не удалась");
     };
     
     return authRequired();
@@ -237,6 +296,10 @@ async function api(path, options = {}) {
           : `Ошибка ${res.status}`;
     throw new Error(msg);
   }
+  
+  // Сбрасываем счетчик попыток при успешном запросе
+  state.authRetryCount = 0;
+  
   return data;
 }
 
@@ -261,13 +324,77 @@ function toastJWT(message, type = "success") {
 // Обновленная функция обеспечения JWT токена
 async function ensureJWToken() {
   if (!jwtManager.isTokenValid()) {
-    const editToken = prompt("Введите токен редактирования для доступа к семейному дереву:");
-    if (editToken === null) return false;
-    const trimmed = editToken.trim();
-    if (!trimmed) return false;
-    return await jwtManager.loginWithEditToken(trimmed);
+    // Если уже были неудачные попытки в этом запросе, не показываем диалог
+    if (state.authRetryCount > 0) {
+      return false;
+    }
+    
+    const level = prompt("Введите уровень доступа:\n1 - Для просмотра (токен: family по умолчанию)\n2 - Для редактирования (токен: secret по умолчанию)\n\nВведите 1 или 2:");
+    
+    if (level === null) return false;
+    
+    let token = "";
+    if (level.trim() === "1") {
+      token = prompt("Введите токен для просмотра (по умолчанию: family):") || "family";
+    } else {
+      token = prompt("Введите токен для редактирования (по умолчанию: secret):") || "secret";
+    }
+    
+    if (token === null) return false;
+    const trimmed = token.trim();
+    if (!trimmed) {
+      alert("Токен не может быть пустым!");
+      return false;
+    }
+    
+    const success = await jwtManager.loginWithToken(trimmed);
+    if (!success) {
+      alert("❌ Неверный токен авторизации!\n\nНажмите кнопку 🔐 в правом верхнем углу для повторной попытки.");
+      return false; // Возвращаем false без повторных диалогов
+    }
+    return success;
   }
   return await jwtManager.refreshTokenIfNeeded();
+}
+
+// Проверка прав редактирования
+async function requireEditorAccess() {
+  if (!(await ensureJWToken())) {
+    throw new Error("Требуется авторизация для доступа к данным");
+  }
+  
+  if (jwtManager.userRole !== "editor") {
+    // Если viewer пытается редактировать - предложить повысить уровень доступа
+    const upgrade = confirm(`Текущий уровень доступа: просмотр\nДля выполнения этой операции требуются права редактирования.\n\nХотите войти с правами редактирования?`);
+    if (upgrade) {
+      state.authRetryCount = 0; // Сбрасываем счетчик при попытке повышения прав
+      const editToken = prompt("Введите токен редактирования (по умолчанию: secret):") || "secret";
+      if (editToken !== null) {
+        const trimmed = editToken.trim();
+        if (!trimmed) {
+          alert("Токен не может быть пустым!");
+          throw new Error("Требуются права редактирования");
+        }
+        
+        const success = await jwtManager.loginWithToken(trimmed);
+        if (success) {
+          if (jwtManager.userRole === "editor") {
+            state.isAuthenticated = true;
+            state.authRetryCount = 0; // Сбрасываем счетчик
+            return true;
+          } else {
+            alert("❌ Введенный токен не имеет прав редактирования!");
+            throw new Error("Требуются права редактирования");
+          }
+        } else {
+          alert("❌ Неверный токен редактирования!\n\nНажмите кнопку 🔐 для повторной попытки.");
+          throw new Error("Требуются права редактирования");
+        }
+      }
+    }
+    throw new Error("Требуются права редактирования");
+  }
+  return true;
 }
 
 async function apiWithJWT(path, options = {}) {
@@ -283,10 +410,57 @@ async function apiWithJWT(path, options = {}) {
   return api(path, options);
 }
 
+// API функция для редактирующих операций
+async function apiWithEditorAccess(path, options = {}) {
+  if (!(await requireEditorAccess())) {
+    throw new Error("Требуются права редактирования");
+  }
+  
+  const headers = (options.headers = options.headers || {});
+  const authHeader = jwtManager.getAuthHeader();
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  }
+  return api(path, options);
+}
+
 // ── Functions for fetch with JWT token (FormData support without JSON parsing) ----------
 async function fetchWithJWT(url, init = {}) {
   if (!(await ensureJWToken())) {
     throw new Error("Требуется авторизация для доступа к данным");
+  }
+  init = init || {};
+  const headers = new Headers(init.headers || {});
+  const authHeader = jwtManager.getAuthHeader();
+  if (authHeader) {
+    headers.set("Authorization", authHeader);
+  }
+  init.headers = headers;
+  const res = await fetch(url, init);
+  if (res.status === 204) return null;
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { detail: text };
+  }
+  if (!res.ok) {
+    const msg =
+      typeof data?.detail === "string"
+        ? data.detail
+        : Array.isArray(data?.detail)
+          ? data.detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
+          : `Ошибка ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+// Fetch с правами редактирования
+async function fetchWithEditorAccess(url, init = {}) {
+  if (!(await requireEditorAccess())) {
+    throw new Error("Требуются права редактирования");
   }
   init = init || {};
   const headers = new Headers(init.headers || {});
@@ -426,20 +600,6 @@ function fillRelationSelects() {
   personOptions($("#r-related"));
   personOptions($("#path-from"), state.selectedId);
   personOptions($("#path-to"));
-}
-
-// Функция для запроса авторизации при просмотре
-async function requestAuth() {
-  const editToken = prompt("Введите токен редактирования для доступа к семейному дереву:");
-  if (editToken === null) return false;
-  const success = await jwtManager.loginWithEditToken(editToken.trim());
-  if (success) {
-    state.isAuthenticated = true;
-    updateAuthUI();
-    // Перезагружаем данные
-    loadPeople();
-  }
-  return success;
 }
 
 // ── Selection & views ──────────────────────────────────
@@ -771,7 +931,7 @@ async function onSavePerson(e) {
   try {
     let person;
     if (editId) {
-      person = await apiWithJWT(`/persons/${editId}`, {
+      person = await apiWithEditorAccess(`/persons/${editId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       });
@@ -790,7 +950,7 @@ async function onSavePerson(e) {
         $("#btn-delete-photo").style.display = "none";
       }
     } else {
-      person = await apiWithJWT("/persons", { method: "POST", body: JSON.stringify(body) });
+      person = await apiWithEditorAccess("/persons", { method: "POST", body: JSON.stringify(body) });
       toast(`Добавлен: ${person.full_name}`);
     }
     closeModal("modal-person");
@@ -814,7 +974,7 @@ async function onCreateRelation(e) {
   };
 
   try {
-    await apiWithJWT("/relationships", { method: "POST", body: JSON.stringify(body) });
+    await apiWithEditorAccess("/relationships", { method: "POST", body: JSON.stringify(body) });
     toast("Связь создана");
     closeModal("modal-relation");
     form.reset();
@@ -924,7 +1084,7 @@ async function onImportGramps(e) {
   form.append("file", file);
 
   try {
-    const data = await fetchWithJWT(`${API}/import/gramps?replace=${replace ? "true" : "false"}`, {
+    const data = await fetchWithEditorAccess(`${API}/import/gramps?replace=${replace ? "true" : "false"}`, {
       method: "POST",
       body: form,
     });
@@ -954,7 +1114,7 @@ async function deleteSelectedPerson() {
   if (!confirm(`Удалить «${person?.full_name || id}» и все его связи?`)) return;
 
   try {
-    await apiWithJWT(`/persons/${id}`, { method: "DELETE" });
+    await apiWithEditorAccess(`/persons/${id}`, { method: "DELETE" });
     toast("Человек удалён");
     el.detail.classList.add("hidden");
     if (state.selectedId === id) {
@@ -997,7 +1157,7 @@ async function onPhotoFileSelected(e) {
   const form = new FormData();
   form.append("file", file);
   try {
-    const media = await apiWithJWT(`/persons/${editId}/photo?is_primary=true`, {
+    const media = await apiWithEditorAccess(`/persons/${editId}/photo?is_primary=true`, {
       method: "POST",
       body: form,
     });
@@ -1020,7 +1180,7 @@ async function onDeletePhoto() {
   if (!editId) return;
   if (!confirm("Удалить фото?")) return;
   try {
-    await apiWithJWT(`/persons/${editId}/photo/all`, { method: "DELETE" });
+    await apiWithEditorAccess(`/persons/${editId}/photo/all`, { method: "DELETE" });
     toast("Фото удалено");
     // скрыть превью
     $("#photo-preview").style.display = "none";
@@ -1205,12 +1365,15 @@ function bindEvents() {
   
   function updateAuthUI() {
     const isAuthenticated = jwtManager.isTokenValid();
+    const isEditor = jwtManager.userRole === "editor";
     state.isAuthenticated = isAuthenticated;
+    state.userRole = jwtManager.userRole;
     
     if (authStatus) {
       if (isAuthenticated) {
-        authStatus.innerHTML = `<span class="auth-indicator auth-indicator--active"></span>`;
-        authStatus.title = "Авторизован";
+        const roleText = isEditor ? "Редактор" : "Просмотр";
+        authStatus.innerHTML = `<span class="auth-indicator auth-indicator--active" title="${roleText}"></span> ${roleText}`;
+        authStatus.title = `Роль: ${roleText}`;
       } else {
         authStatus.innerHTML = `<span class="auth-indicator auth-indicator--inactive"></span>`;
         authStatus.title = "Не авторизован";
@@ -1221,9 +1384,39 @@ function bindEvents() {
       btnAuth.textContent = isAuthenticated ? "🚪" : "🔐";
       btnAuth.title = isAuthenticated ? "Выйти" : "Войти";
     }
+    
+    // Блокируем кнопки редактирования для viewers
+    const editButtons = [
+      document.getElementById("btn-add-person"),
+      document.getElementById("btn-add-relation"),
+      document.getElementById("btn-import"),
+      document.getElementById("btn-export-obsidian"),
+      document.getElementById("btn-edit-person"),
+      document.getElementById("btn-delete-person"),
+      document.getElementById("btn-upload-photo"),
+      document.getElementById("btn-delete-photo"),
+      document.getElementById("btn-person-submit"),
+      document.getElementById("btn-back-tree")
+    ];
+    
+    editButtons.forEach(btn => {
+      if (btn && isAuthenticated && !isEditor) {
+        btn.disabled = true;
+        btn.title = "Требуются права редактирования";
+        if (!btn.classList.contains("disabled")) {
+          btn.classList.add("disabled");
+        }
+      } else if (btn) {
+        btn.disabled = false;
+        btn.title = btn.title.replace("Требуются права редактирования", "");
+        btn.classList.remove("disabled");
+      }
+    });
   }
   
   async function handleAuthClick() {
+    state.authRetryCount = 0; // Сбрасываем счетчик попыток при ручном входе через кнопку
+    
     const isAuthenticated = jwtManager.isTokenValid();
     
     if (isAuthenticated) {
@@ -1239,14 +1432,31 @@ function bindEvents() {
       }
     } else {
       // Вход
-      const editToken = prompt("Введите токен редактирования:");
-      if (editToken === null) return;
+      const level = prompt("Введите уровень доступа:\n1 - Для просмотра (токен: family по умолчанию)\n2 - Для редактирования (токен: secret по умолчанию)\n\nВведите 1 или 2:");
       
-      const success = await jwtManager.loginWithEditToken(editToken.trim());
+      if (level === null) return;
+      
+      let token = "";
+      if (level.trim() === "1") {
+        token = prompt("Введите токен для просмотра (по умолчанию: family):") || "family";
+      } else {
+        token = prompt("Введите токен для редактирования (по умолчанию: secret):") || "secret";
+      }
+      
+      const trimmed = token.trim();
+      if (!trimmed) {
+        alert("Токен не может быть пустым!");
+        return;
+      }
+      
+      const success = await jwtManager.loginWithToken(trimmed);
       if (success) {
-        updateAuthUI();
+        state.isAuthenticated = true;
+        state.authRetryCount = 0; // Сбрасываем счетчик при успехе
         // Загружаем данные после авторизации
         loadPeople();
+      } else {
+        alert("❌ Неверный токен авторизации!\n\nПроверьте правильность токена и попробуйте снова.");
       }
     }
   }
