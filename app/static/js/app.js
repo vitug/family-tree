@@ -553,11 +553,14 @@ function escapeHtml(s) {
 
 async function loadPeople(q = "") {
   const query = q ? `?q=${encodeURIComponent(q)}` : "";
+  console.log(`loadPeople called with q: "${q}", query: "${query}"`);
   try {
     state.people = await api(`/persons${query}`);
+    console.log(`Received ${state.people.length} people`);
     renderPersonList();
     fillRelationSelects();
   } catch (e) {
+    console.error(`Error in loadPeople: ${e.message}`);
     if (e.message === "Authorization cancelled or failed") {
       // Пользователь отменил авторизацию - показываем пустой список
       state.people = [];

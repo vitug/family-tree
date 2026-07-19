@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -20,6 +20,13 @@ from app.schemas import (
     TreeNode,
     TreeResponse,
 )
+
+# Добавим пользовательскую функцию для кириллицы
+def cyrillic_lower(text: str | None) -> str | None:
+    """Функция для корректного перевода кириллицы в нижний регистр."""
+    if text is None:
+        return None
+    return text.lower()
 
 
 class TreeService:
@@ -53,11 +60,16 @@ class TreeService:
         stmt = select(Person).order_by(Person.id)
         if q:
             pattern = f"%{q}%"
+            # Регистрируем пользовательскую функцию для текущего соединения
+            self.db.connection().connection.create_function("cyrillic_lower", 1, cyrillic_lower)
+            
+            # Используем пользовательскую функцию для поиска без учета регистра
+            lower_pattern = pattern.lower()
             stmt = stmt.where(
                 or_(
-                    Person.first_name.ilike(pattern),
-                    Person.last_name.ilike(pattern),
-                    Person.middle_name.ilike(pattern),
+                    func.cyrillic_lower(Person.first_name).like(lower_pattern),
+                    func.cyrillic_lower(Person.last_name).like(lower_pattern),
+                    func.cyrillic_lower(Person.middle_name).like(lower_pattern),
                 )
             )
         return list(self.db.scalars(stmt.offset(skip).limit(limit)).all())

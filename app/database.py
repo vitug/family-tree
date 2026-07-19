@@ -1,13 +1,38 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
 
+def cyrillic_lower(text: str | None) -> str | None:
+    """Функция для корректного перевода кириллицы в нижний регистр для SQLite."""
+    if text is None:
+        return None
+    return text.lower()
+
+def cyrillic_upper(text: str | None) -> str | None:
+    """Функция для корректного перевода кириллицы в верхний регистр для SQLite."""
+    if text is None:
+        return None
+    return text.upper()
+
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 engine = create_engine(settings.database_url, connect_args=connect_args)
+
+# Добавляем пользовательские функции для работы с кириллицей в SQLite
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    """Устанавливает пользовательские функции для SQLite при подключении."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    cursor = dbapi_connection.cursor()
+    # Создаем пользовательские функции для кириллицы
+    cursor.connection.create_function("CYRILLIC_LOWER", 1, cyrillic_lower)
+    cursor.connection.create_function("CYRILLIC_UPPER", 1, cyrillic_upper)
+    cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
