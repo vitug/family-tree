@@ -15,7 +15,7 @@ def get_service(db: Session = Depends(get_db)) -> TreeService:
     return TreeService(db)
 
 
-@router.get("", response_model=list[PersonRead])
+@router.get("", response_model=list[PersonRead], dependencies=[Depends(require_jwt_token)])
 def list_persons(
     q: str | None = Query(None, description="Поиск по имени/фамилии"),
     skip: int = Query(0, ge=0),
@@ -26,7 +26,7 @@ def list_persons(
     return service.list_persons(q=q, skip=skip, limit=limit)
 
 
-@router.get("/{person_id}", response_model=PersonRead)
+@router.get("/{person_id}", response_model=PersonRead, dependencies=[Depends(require_jwt_token)])
 def get_person(person_id: int, service: TreeService = Depends(get_service)) -> PersonRead:
     logger.debug("get_person: id=%d", person_id)
     return service.get_person(person_id)

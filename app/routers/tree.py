@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.routers.auth import require_jwt_token
 from app.schemas import (
     AncestorsResponse,
     DescendantsResponse,
@@ -18,7 +19,7 @@ def get_service(db: Session = Depends(get_db)) -> TreeService:
     return TreeService(db)
 
 
-@router.get("/{person_id}", response_model=TreeResponse)
+@router.get("/{person_id}", response_model=TreeResponse, dependencies=[Depends(require_jwt_token)])
 def get_tree(
     person_id: int,
     depth_up: int = Query(2, ge=0, le=20, description="Поколений вверх (предки)"),
@@ -29,7 +30,7 @@ def get_tree(
     return service.build_tree(person_id, depth_up=depth_up, depth_down=depth_down)
 
 
-@router.get("/{person_id}/relatives", response_model=RelativesResponse)
+@router.get("/{person_id}/relatives", response_model=RelativesResponse, dependencies=[Depends(require_jwt_token)])
 def get_relatives(
     person_id: int,
     service: TreeService = Depends(get_service),
@@ -38,7 +39,7 @@ def get_relatives(
     return service.get_relatives(person_id)
 
 
-@router.get("/{person_id}/ancestors", response_model=AncestorsResponse)
+@router.get("/{person_id}/ancestors", response_model=AncestorsResponse, dependencies=[Depends(require_jwt_token)])
 def get_ancestors(
     person_id: int,
     max_depth: int | None = Query(None, ge=1, le=20),
@@ -48,7 +49,7 @@ def get_ancestors(
     return service.get_ancestors(person_id, max_depth=max_depth)
 
 
-@router.get("/{person_id}/descendants", response_model=DescendantsResponse)
+@router.get("/{person_id}/descendants", response_model=DescendantsResponse, dependencies=[Depends(require_jwt_token)])
 def get_descendants(
     person_id: int,
     max_depth: int | None = Query(None, ge=1, le=20),
@@ -58,7 +59,7 @@ def get_descendants(
     return service.get_descendants(person_id, max_depth=max_depth)
 
 
-@router.get("/path/{from_id}/{to_id}", response_model=PathResponse)
+@router.get("/path/{from_id}/{to_id}", response_model=PathResponse, dependencies=[Depends(require_jwt_token)])
 def find_path(
     from_id: int,
     to_id: int,

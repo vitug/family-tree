@@ -15,7 +15,7 @@ def get_service(db: Session = Depends(get_db)) -> TreeService:
     return TreeService(db)
 
 
-@router.get("", response_model=list[RelationshipRead])
+@router.get("", response_model=list[RelationshipRead], dependencies=[Depends(require_jwt_token)])
 def list_relationships(
     person_id: int | None = Query(None, description="Фильтр по участнику связи"),
     service: TreeService = Depends(get_service),

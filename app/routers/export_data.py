@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.routers.auth import require_jwt_token
 from app.services.obsidian_export import ObsidianExporter
 
 router = APIRouter(prefix="/export", tags=["export"])
@@ -21,7 +22,7 @@ class ObsidianExportResult(BaseModel):
     message: str
 
 
-@router.post("/obsidian", response_model=ObsidianExportResult)
+@router.post("/obsidian", response_model=ObsidianExportResult, dependencies=[Depends(require_jwt_token)])
 def export_obsidian(
     clean: bool = Query(True, description="Очистить папку экспорта перед записью"),
     db: Session = Depends(get_db),
@@ -49,7 +50,7 @@ def export_obsidian(
     )
 
 
-@router.get("/obsidian/zip")
+@router.get("/obsidian/zip", dependencies=[Depends(require_jwt_token)])
 def export_obsidian_zip(db: Session = Depends(get_db)) -> FileResponse:
     """Собрать vault и отдать ZIP для скачивания."""
     exporter = ObsidianExporter(db)
@@ -71,7 +72,7 @@ def export_obsidian_zip(db: Session = Depends(get_db)) -> FileResponse:
     )
 
 
-@router.get("/obsidian/path")
+@router.get("/obsidian/path", dependencies=[Depends(require_jwt_token)])
 def export_obsidian_path() -> dict[str, str]:
     """Путь к папке экспорта по умолчанию."""
     return {"export_dir": str(Path(settings.obsidian_export_dir).resolve())}

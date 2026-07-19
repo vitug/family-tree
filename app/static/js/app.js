@@ -21,7 +21,7 @@ const jwtManager = {
     }
   },
 
-  // Сохранение токена
+  // Сохранение токана
   saveToken(token, expiresIn) {
     this.accessToken = token;
     const now = Date.now();
@@ -148,13 +148,79 @@ async function api(path, options = {}) {
   if (!(body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
-  // Добавить токен редактирования, если он есть (только при запросах, где предполагается изменение)
-  // Но здесь не знаем, изменяется ли или нет. Будем добавлять токен только в явно edit-запросах на клиенте.
+  
+  // Добавляем JWT токен для всех запросов (теперь все требуют авторизацию)
+  const authHeader = jwtManager.getAuthHeader();
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  }
+  
   const res = await fetch(`${API}${path}`, {
     headers,
     ...options,
   });
   if (res.status === 204) return null;
+  
+  // Обработка 401 Unauthorized - автоматическая попытка авторизации
+  if (res.status === 401) {
+    console.log("401 Unauthorized - требуется авторизация");
+    
+    // Если есть токен, пробуем обновить
+    if (jwtManager.accessToken) {
+      console.log("Пробуем обновить токен...");
+      const refreshed = await jwtManager.refreshToken();
+      if (refreshed) {
+        // Повторяем запрос с новым токеном
+        const newAuthHeader = jwtManager.getAuthHeader();
+        if (newAuthHeader) {
+          headers["Authorization"] = newAuthHeader;
+        }
+        const retryRes = await fetch(`${API}${path}`, {
+          headers,
+          ...options,
+        });
+        if (retryRes.status === 204) return null;
+        const retryText = await retryRes.text();
+        let retryData = null;
+        try {
+          retryData = retryText ? JSON.parse(retryText) : null;
+        } catch {
+          retryData = { detail: retryText };
+        }
+        if (!retryRes.ok) {
+          const msg =
+            typeof retryData?.detail === "string"
+              ? retryData.detail
+              : Array.isArray(retryData?.detail)
+                ? retryData.detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
+                : `Ошибка ${retryRes.status}`;
+          throw new Error(msg);
+        }
+        return retryData;
+      }
+    }
+    
+    // Если токена нет или обновление не помогло - предлагаем авторизоваться
+    const authRequired = async () => {
+      const userChoice = confirm("Требуется авторизация для доступа к семейному дереву.\n\nХотите войти с токеном редактирования?");
+      if (userChoice) {
+        const editToken = prompt("Введите токен редактирования:");
+        if (editToken !== null) {
+          const success = await jwtManager.loginWithEditToken(editToken.trim());
+          if (success) {
+            state.isAuthenticated = true;
+            updateAuthUI();
+            // Повторяем исходный запрос
+            return api(path, options);
+          }
+        }
+      }
+      throw new Error("Авторизация отменена или не удалась");
+    };
+    
+    return authRequired();
+  }
+  
   const text = await res.text();
   let data = null;
   try {
@@ -194,24 +260,19 @@ function toastJWT(message, type = "success") {
 
 // Обновленная функция обеспечения JWT токена
 async function ensureJWToken() {
-  if (jwtManager.isTokenValid()) {
-    return await jwtManager.refreshTokenIfNeeded();
+  if (!jwtManager.isTokenValid()) {
+    const editToken = prompt("Введите токен редактирования для доступа к семейному дереву:");
+    if (editToken === null) return false;
+    const trimmed = editToken.trim();
+    if (!trimmed) return false;
+    return await jwtManager.loginWithEditToken(trimmed);
   }
-  
-  const editToken = prompt(
-    "Введите токен редактирования (указан в конфиге службы, по умолчанию 'secret')"
-  );
-  if (editToken === null) return false;
-  const trimmed = editToken.trim();
-  if (!trimmed) return false;
-  
-  return await jwtManager.loginWithEditToken(trimmed);
+  return await jwtManager.refreshTokenIfNeeded();
 }
 
-// Обновленная функция API с JWT
 async function apiWithJWT(path, options = {}) {
   if (!(await ensureJWToken())) {
-    throw new Error("Требуется авторизация");
+    throw new Error("Требуется авторизация для доступа к данным");
   }
   
   const headers = (options.headers = options.headers || {});
@@ -219,14 +280,13 @@ async function apiWithJWT(path, options = {}) {
   if (authHeader) {
     headers["Authorization"] = authHeader;
   }
-  
   return api(path, options);
 }
 
 // ── Functions for fetch with JWT token (FormData support without JSON parsing) ----------
 async function fetchWithJWT(url, init = {}) {
   if (!(await ensureJWToken())) {
-    throw new Error("Требуется авторизация");
+    throw new Error("Требуется авторизация для доступа к данным");
   }
   init = init || {};
   const headers = new Headers(init.headers || {});
@@ -319,15 +379,30 @@ function escapeHtml(s) {
 
 async function loadPeople(q = "") {
   const query = q ? `?q=${encodeURIComponent(q)}` : "";
-  state.people = await api(`/persons${query}`);
-  renderPersonList();
-  fillRelationSelects();
+  try {
+    state.people = await api(`/persons${query}`);
+    renderPersonList();
+    fillRelationSelects();
+  } catch (e) {
+    if (e.message === "Authorization cancelled or failed") {
+      // Пользователь отменил авторизацию - показываем пустой список
+      state.people = [];
+      renderPersonList();
+    } else {
+      toast(e.message || "Не удалось загрузить список людей", "error");
+    }
+  }
 }
 
 function renderPersonList() {
   if (!state.people.length) {
-    el.personList.innerHTML =
-      '<p style="padding:1rem;color:var(--text-muted);font-size:0.85rem">Пока никого нет.<br>Добавьте первого человека.</p>';
+    if (state.isAuthenticated) {
+      el.personList.innerHTML =
+        '<p style="padding:1rem;color:var(--text-muted);font-size:0.85rem">Пока никого нет.<br>Добавьте первого человека.</p>';
+    } else {
+      el.personList.innerHTML =
+        '<p style="padding:1rem;color:var(--text-muted);font-size:0.85rem">Требуется авторизация для просмотра списка людей.<br><button onclick="requestAuth()" style="margin-top:0.5rem;padding:0.5rem 1rem;background:#007bff;color:#fff;border:none;border-radius:4px;cursor:pointer;">Войти</button></p>';
+    }
     return;
   }
 
@@ -353,14 +428,38 @@ function fillRelationSelects() {
   personOptions($("#path-to"));
 }
 
+// Функция для запроса авторизации при просмотре
+async function requestAuth() {
+  const editToken = prompt("Введите токен редактирования для доступа к семейному дереву:");
+  if (editToken === null) return false;
+  const success = await jwtManager.loginWithEditToken(editToken.trim());
+  if (success) {
+    state.isAuthenticated = true;
+    updateAuthUI();
+    // Перезагружаем данные
+    loadPeople();
+  }
+  return success;
+}
+
 // ── Selection & views ──────────────────────────────────
 
 async function selectPerson(id, { openDetail = false } = {}) {
   state.selectedId = id;
   renderPersonList();
   el.toolbarHint.textContent = "";
-  await renderMainView();
-  if (openDetail) await showDetail(id);
+  try {
+    await renderMainView();
+    if (openDetail) await showDetail(id);
+  } catch (e) {
+    if (e.message === "Authorization cancelled or failed") {
+      // Пользователь отменил авторизацию
+      el.canvas.classList.add("hidden");
+      el.empty.classList.remove("hidden");
+    } else {
+      toast(e.message, "error");
+    }
+  }
 }
 
 async function renderMainView() {
@@ -385,15 +484,33 @@ async function renderMainView() {
   state.depthDown = Number(el.depthDown.value) || 0;
 
   if (state.view === "tree") {
-    const tree = await api(
-      `/tree/${state.selectedId}?depth_up=${state.depthUp}&depth_down=${state.depthDown}`
-    );
-    renderTree(tree);
-    el.toolbarHint.textContent = `Узлов: ${tree.nodes_count}`;
+    try {
+      const tree = await api(
+        `/tree/${state.selectedId}?depth_up=${state.depthUp}&depth_down=${state.depthDown}`
+      );
+      renderTree(tree);
+      el.toolbarHint.textContent = `Узлов: ${tree.nodes_count}`;
+    } catch (e) {
+      if (e.message === "Authorization cancelled or failed") {
+        el.canvas.classList.add("hidden");
+        el.empty.classList.remove("hidden");
+      } else {
+        toast(e.message, "error");
+      }
+    }
   } else {
-    const rel = await api(`/tree/${state.selectedId}/relatives`);
-    renderRelativesView(rel);
-    el.toolbarHint.textContent = "Ближайшие родственники";
+    try {
+      const rel = await api(`/tree/${state.selectedId}/relatives`);
+      renderRelativesView(rel);
+      el.toolbarHint.textContent = "Ближайшие родственники";
+    } catch (e) {
+      if (e.message === "Authorization cancelled or failed") {
+        el.canvas.classList.add("hidden");
+        el.empty.classList.remove("hidden");
+      } else {
+        toast(e.message, "error");
+      }
+    }
   }
 }
 
@@ -515,7 +632,10 @@ function renderRelativesView(rel) {
 // ── Detail panel ───────────────────────────────────────
 
 async function showDetail(id) {
-  const person = state.people.find((p) => p.id === id) || (await api(`/persons/${id}`));
+  let person = state.people.find((p) => p.id === id);
+  if (!person) {
+    person = await api(`/persons/${id}`);
+  }
   const rel = await api(`/tree/${id}/relatives`);
 
   el.detailName.textContent = person.full_name;
@@ -754,7 +874,7 @@ async function onFindPath(e) {
 async function onExportObsidian() {
   if (!confirm("Экспортировать всех людей в Markdown для Obsidian?")) return;
   try {
-    const data = await api("/export/obsidian", { method: "POST" });
+    const data = await apiWithJWT("/export/obsidian", { method: "POST" });
     toast(data.message || "Экспорт готов");
     if (data.warnings?.length) console.warn(data.warnings);
 
@@ -913,7 +1033,7 @@ async function onDeletePhoto() {
   }
 }
 
-// ── Relation type labels ───────────────────────────────
+// ── Relation type labels ─────────────────────────────
 
 function updateRelationLabels() {
   const type = $("#r-type").value;
@@ -1112,6 +1232,10 @@ function bindEvents() {
         jwtManager.clearToken();
         updateAuthUI();
         toastJWT("Вы вышли из системы", "success");
+        // Очищаем данные и перезагружаем
+        state.people = [];
+        state.selectedId = null;
+        renderPersonList();
       }
     } else {
       // Вход
@@ -1121,6 +1245,8 @@ function bindEvents() {
       const success = await jwtManager.loginWithEditToken(editToken.trim());
       if (success) {
         updateAuthUI();
+        // Загружаем данные после авторизации
+        loadPeople();
       }
     }
   }
@@ -1173,15 +1299,25 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
-  try {
-    await loadPeople();
-    if (state.people.length) {
-      // Prefer demo root "Сергей" if present
-      const sergey = state.people.find((p) => p.first_name === "Сергей");
-      await selectPerson((sergey || state.people[0]).id);
+  
+  // Если токен есть, загружаем данные, иначе показываем запрос авторизации
+  if (jwtManager.isTokenValid()) {
+    try {
+      await loadPeople();
+      if (state.people.length) {
+        // Prefer demo root "Сергей" if present
+        const sergey = state.people.find((p) => p.first_name === "Сергей");
+        await selectPerson((sergey || state.people[0]).id);
+      }
+    } catch (err) {
+      console.error("Ошибка при загрузке данных:", err);
+      toast(`Не удалось загрузить данные: ${err.message}`, "error");
     }
-  } catch (err) {
-    toast(`Не удалось загрузить данные: ${err.message}`, "error");
+  } else {
+    // Показываем сообщение о том, что нужна авторизация
+    state.people = [];
+    renderPersonList();
+    toastJWT("Для доступа к семейному дереву требуется авторизация", "error");
   }
 }
 

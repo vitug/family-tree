@@ -123,7 +123,7 @@ async def delete_person_photo(
     db.commit()
 
 
-@router.get("/{person_id}/photos", response_model=list[MediaRead])
+@router.get("/{person_id}/photos", response_model=list[MediaRead], dependencies=[Depends(require_jwt_token)])
 async def list_person_photos(
     person: Annotated[Person, Depends(get_person)],
     db: Session = Depends(get_db),
