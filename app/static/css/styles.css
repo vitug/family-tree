@@ -636,7 +636,7 @@ body::before {
 .detail-panel {
   position: absolute;
   top: 1rem;
-  right: 1rem;
+  left: 1rem;
   width: 300px;
   max-height: calc(100% - 2rem);
   overflow-y: auto;
