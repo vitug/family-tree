@@ -2,14 +2,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Security, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict
-from starlette.requests import Request
 
 import logging
 
 from app.config import settings
+from app.security import rate_limit_auth
 
 logger = logging.getLogger(__name__)
 
@@ -168,23 +168,30 @@ async def verify_edit_token(request: Request) -> dict[str, bool]:
 
 # ── JWT эндпоинты ─────────────────────────────────────────────────────────
 
-@router.post("/token", response_model=TokenResponse)
-async def login_with_token(request_data: TokenRequest) -> TokenResponse:
+@router.post("/token", response_model=TokenResponse, dependencies=[Depends(rate_limit_auth)])
+async def login_with_token(request: Request, request_data: TokenRequest) -> TokenResponse:
     """Получить JWT токен в обмен на view token или edit token.
-    
+
     - view token даёт роль "viewer" (только чтение)
     - edit token даёт роль "editor" (чтение и запись)
+
+    Защищено от brute-force: rate limiting + временная блокировка.
     """
+    from app.security import check_brute_force
+
     logger.info("Login attempt")
     logger.info(f"Received token: {repr(request_data.token)}")
     logger.info(f"View token: {repr(settings.view_token)}")
     logger.info(f"Edit token: {repr(settings.edit_token)}")
-    
+
+    # Brute-force проверка: заблокирован ли этот IP?
+    await check_brute_force(request, success=False)  # Пока не знаем успех
+
     # Удаляем лишние пробелы из настроек
     clean_view_token = settings.view_token.strip()
     clean_edit_token = settings.edit_token.strip()
     clean_user_token = request_data.token.strip()
-    
+
     # Проверка токена и определение роли
     role = None
     if clean_user_token == clean_view_token:
@@ -195,23 +202,30 @@ async def login_with_token(request_data: TokenRequest) -> TokenResponse:
         logger.info("Login successful with edit token")
     else:
         logger.warning("Invalid token for login")
-        logger.warning(f"Token comparison failed: {repr(clean_user_token)} != {repr(clean_view_token)} and {repr(clean_user_token)} != {repr(clean_edit_token)}")
+        logger.warning(
+            f"Token comparison failed: {repr(clean_user_token)} != {repr(clean_view_token)} and {repr(clean_user_token)} != {repr(clean_edit_token)}"
+        )
+        # Фиксируем неудачную попытку для anti-brute-force
+        await check_brute_force(request, success=False)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный токен авторизации"
+            detail="Неверный токен авторизации",
         )
-    
+
+    # Успешная попытка: очищаем brute-force счётчик
+    await check_brute_force(request, success=True)
+
     # Создание JWT токена с ролью
     access_token = create_access_token(data={"sub": "user", "role": role})
-    
+
     # Расчет времени жизни токена в секундах
     expires_in = settings.jwt_access_token_expire_hours * 3600
-    
+
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
         expires_in=expires_in,
-        role=role
+        role=role,
     )
 
 @router.post("/refresh", response_model=TokenResponse)

@@ -118,44 +118,103 @@ const jwtManager = {
 // Инициализация jwtManager при загрузке
 jwtManager.init();
 
-// Функция для запроса авторизации при просмотре (глобальная для HTML доступа)
-// Определяем раннее, чтобы быть доступным при загрузке страницы
-window.requestAuth = async function() {
-  state.authRetryCount = 0; // Сбрасываем счетчик попыток при ручном входе
-  
-  const level = prompt("Введите уровень доступа:\n1 - Для просмотра (токен: family по умолчанию)\n2 - Для редактирования (токен: secret по умолчанию)\n\nВведите 1 или 2:");
-  
-  if (level === null) return false;
-  
-  let token = "";
-  let tokenType = "";
-  
-  if (level.trim() === "1") {
-    token = prompt("Введите токен для просмотра (по умолчанию: family):") || "family";
-    tokenType = "просмотр";
-  } else {
-    token = prompt("Введите токен для редактирования (по умолчанию: secret):") || "secret";
-    tokenType = "редактирование";
-  }
-  
-  if (token === null) return false;
-  
-  const trimmed = token.trim();
-  if (!trimmed) {
-    alert("Токен не может быть пустым!");
-    return false;
-  }
-  
-  const success = await jwtManager.loginWithToken(trimmed);
-  if (success) {
-    state.isAuthenticated = true;
-    state.authRetryCount = 0;
-    // Перезагружаем данные
-    loadPeople();
-  } else {
-    alert("❌ Неверный токен авторизации!\n\nПроверьте правильность токена и попробуйте снова.");
-  }
-  return success;
+/** Открыть модалку входа; resolve(true/false) после попытки. */
+function openAuthModal({ preferEditor = false } = {}) {
+  return new Promise((resolve) => {
+    const form = $("#form-auth");
+    const levelEl = $("#auth-level");
+    const tokenEl = $("#auth-token");
+    const overlay = $("#modal-auth");
+    if (!form || !levelEl || !tokenEl || !overlay) {
+      resolve(false);
+      return;
+    }
+
+    // Если модалка уже открыта с ожиданием — не плодим промисы
+    if (overlay.dataset.authPending === "1") {
+      resolve(false);
+      return;
+    }
+    overlay.dataset.authPending = "1";
+
+    levelEl.value = preferEditor ? "editor" : "viewer";
+    tokenEl.value = "";
+    updateAuthTokenHint();
+    openModal("modal-auth");
+    setTimeout(() => tokenEl.focus(), 50);
+
+    let settled = false;
+    const cancelBtns = $$('[data-close="modal-auth"]');
+
+    const cleanup = () => {
+      form.removeEventListener("submit", onSubmit);
+      cancelBtns.forEach((b) => b.removeEventListener("click", onCancel));
+      overlay.removeEventListener("click", onOverlay);
+      document.removeEventListener("keydown", onKey);
+      delete overlay.dataset.authPending;
+    };
+
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      closeModal("modal-auth");
+      resolve(ok);
+    };
+
+    const onCancel = () => finish(false);
+    const onOverlay = (e) => {
+      if (e.target === overlay) finish(false);
+    };
+    const onKey = (e) => {
+      // finish даже если другой обработчик уже скрыл оверлей
+      if (e.key === "Escape" && overlay.dataset.authPending === "1") finish(false);
+    };
+    const onSubmit = async (e) => {
+      e.preventDefault();
+      const role = levelEl.value;
+      const defaults = { viewer: "family", editor: "secret" };
+      let trimmed = tokenEl.value.trim();
+      if (!trimmed) trimmed = defaults[role] || "";
+      if (!trimmed) {
+        toast("Токен не может быть пустым", "error");
+        return;
+      }
+      const success = await jwtManager.loginWithToken(trimmed);
+      if (success) {
+        state.isAuthenticated = true;
+        state.authRetryCount = 0;
+        finish(true);
+        loadPeople();
+        if (typeof window.__updateAuthUI === "function") window.__updateAuthUI();
+      } else {
+        toast("Неверный токен авторизации", "error");
+        tokenEl.focus();
+        tokenEl.select();
+      }
+    };
+
+    form.addEventListener("submit", onSubmit);
+    cancelBtns.forEach((b) => b.addEventListener("click", onCancel));
+    overlay.addEventListener("click", onOverlay);
+    document.addEventListener("keydown", onKey);
+  });
+}
+
+function updateAuthTokenHint() {
+  const levelEl = $("#auth-level");
+  const hintEl = $("#auth-token-hint");
+  if (!levelEl || !hintEl) return;
+  hintEl.textContent =
+    levelEl.value === "editor"
+      ? "По умолчанию для редактирования: secret"
+      : "По умолчанию для просмотра: family";
+}
+
+// Глобальный вход (кнопка в пустом списке и т.п.)
+window.requestAuth = async function () {
+  state.authRetryCount = 0;
+  return openAuthModal();
 };
 
 const state = {
@@ -177,7 +236,10 @@ const el = {
   personList: $("#person-list"),
   search: $("#search"),
   toggleSidebar: $("#btn-toggle-sidebar"),
-  sidebar: $(".sidebar"),
+  closeSidebar: $("#btn-close-sidebar"),
+  sidebar: $("#sidebar") || $(".sidebar"),
+  sidebarBackdrop: $("#sidebar-backdrop"),
+  app: $(".app"),
   viewArea: $("#view-area"),
   empty: $("#empty-state"),
   canvas: $("#tree-canvas"),
@@ -190,7 +252,52 @@ const el = {
   depthUp: $("#depth-up"),
   depthDown: $("#depth-down"),
   toasts: $("#toasts"),
+  headerMore: $("#btn-header-more"),
+  headerMenuPanel: $("#header-menu-panel"),
+  emptyOpenList: $("#btn-empty-open-list"),
 };
+
+const MOBILE_MQ = window.matchMedia("(max-width: 900px)");
+
+function isMobileLayout() {
+  return MOBILE_MQ.matches;
+}
+
+function setSidebarOpen(open) {
+  if (!el.sidebar) return;
+  el.sidebar.classList.toggle("open", open);
+  el.sidebarBackdrop?.classList.toggle("open", open);
+  el.sidebarBackdrop?.classList.toggle("hidden", !open);
+  el.toggleSidebar?.setAttribute("aria-expanded", open ? "true" : "false");
+  if (!isMobileLayout() && el.app) {
+    el.app.classList.toggle("sidebar-collapsed", !open);
+  }
+}
+
+function toggleSidebar() {
+  if (isMobileLayout()) {
+    const open = !el.sidebar?.classList.contains("open");
+    setSidebarOpen(open);
+  } else {
+    const collapsed = el.app?.classList.contains("sidebar-collapsed");
+    setSidebarOpen(collapsed); // if collapsed → open
+  }
+}
+
+function closeHeaderMenu() {
+  el.headerMenuPanel?.classList.add("hidden");
+  el.headerMore?.setAttribute("aria-expanded", "false");
+}
+
+function toggleHeaderMenu() {
+  const willOpen = el.headerMenuPanel?.classList.contains("hidden");
+  if (willOpen) {
+    el.headerMenuPanel?.classList.remove("hidden");
+    el.headerMore?.setAttribute("aria-expanded", "true");
+  } else {
+    closeHeaderMenu();
+  }
+}
 
 // ── API helpers ────────────────────────────────────────
 
@@ -321,38 +428,17 @@ function toastJWT(message, type = "success") {
   setTimeout(() => node.remove(), 3000);
 }
 
-// Обновленная функция обеспечения JWT токена
+// Обеспечение JWT токена через модалку
 async function ensureJWToken() {
   if (!jwtManager.isTokenValid()) {
-    // Если уже были неудачные попытки в этом запросе, не показываем диалог
     if (state.authRetryCount > 0) {
       return false;
     }
-    
-    const level = prompt("Введите уровень доступа:\n1 - Для просмотра (токен: family по умолчанию)\n2 - Для редактирования (токен: secret по умолчанию)\n\nВведите 1 или 2:");
-    
-    if (level === null) return false;
-    
-    let token = "";
-    if (level.trim() === "1") {
-      token = prompt("Введите токен для просмотра (по умолчанию: family):") || "family";
-    } else {
-      token = prompt("Введите токен для редактирования (по умолчанию: secret):") || "secret";
-    }
-    
-    if (token === null) return false;
-    const trimmed = token.trim();
-    if (!trimmed) {
-      alert("Токен не может быть пустым!");
+    const success = await openAuthModal();
+    if (!success) {
       return false;
     }
-    
-    const success = await jwtManager.loginWithToken(trimmed);
-    if (!success) {
-      alert("❌ Неверный токен авторизации!\n\nНажмите кнопку 🔐 в правом верхнем углу для повторной попытки.");
-      return false; // Возвращаем false без повторных диалогов
-    }
-    return success;
+    return true;
   }
   return await jwtManager.refreshTokenIfNeeded();
 }
@@ -362,34 +448,22 @@ async function requireEditorAccess() {
   if (!(await ensureJWToken())) {
     throw new Error("Требуется авторизация для доступа к данным");
   }
-  
+
   if (jwtManager.userRole !== "editor") {
-    // Если viewer пытается редактировать - предложить повысить уровень доступа
-    const upgrade = confirm(`Текущий уровень доступа: просмотр\nДля выполнения этой операции требуются права редактирования.\n\nХотите войти с правами редактирования?`);
+    const upgrade = confirm(
+      "Текущий уровень доступа: просмотр.\nДля этой операции нужны права редактирования.\n\nВойти как редактор?"
+    );
     if (upgrade) {
-      state.authRetryCount = 0; // Сбрасываем счетчик при попытке повышения прав
-      const editToken = prompt("Введите токен редактирования (по умолчанию: secret):") || "secret";
-      if (editToken !== null) {
-        const trimmed = editToken.trim();
-        if (!trimmed) {
-          alert("Токен не может быть пустым!");
-          throw new Error("Требуются права редактирования");
-        }
-        
-        const success = await jwtManager.loginWithToken(trimmed);
-        if (success) {
-          if (jwtManager.userRole === "editor") {
-            state.isAuthenticated = true;
-            state.authRetryCount = 0; // Сбрасываем счетчик
-            return true;
-          } else {
-            alert("❌ Введенный токен не имеет прав редактирования!");
-            throw new Error("Требуются права редактирования");
-          }
-        } else {
-          alert("❌ Неверный токен редактирования!\n\nНажмите кнопку 🔐 для повторной попытки.");
-          throw new Error("Требуются права редактирования");
-        }
+      state.authRetryCount = 0;
+      const success = await openAuthModal({ preferEditor: true });
+      if (success && jwtManager.userRole === "editor") {
+        state.isAuthenticated = true;
+        state.authRetryCount = 0;
+        if (typeof window.__updateAuthUI === "function") window.__updateAuthUI();
+        return true;
+      }
+      if (success && jwtManager.userRole !== "editor") {
+        toast("Введённый токен не даёт прав редактирования", "error");
       }
     }
     throw new Error("Требуются права редактирования");
@@ -575,10 +649,11 @@ function renderPersonList() {
   if (!state.people.length) {
     if (state.isAuthenticated) {
       el.personList.innerHTML =
-        '<p style="padding:1rem;color:var(--text-muted);font-size:0.85rem">Пока никого нет.<br>Добавьте первого человека.</p>';
+        '<p class="list-empty">Пока никого нет.<br>Добавьте первого человека.</p>';
     } else {
       el.personList.innerHTML =
-        '<p style="padding:1rem;color:var(--text-muted);font-size:0.85rem">Требуется авторизация для просмотра списка людей.<br><button onclick="requestAuth()" style="margin-top:0.5rem;padding:0.5rem 1rem;background:#007bff;color:#fff;border:none;border-radius:4px;cursor:pointer;">Войти</button></p>';
+        '<p class="list-empty">Требуется авторизация.<br><button type="button" class="btn btn-primary btn-sm" id="btn-list-login" style="margin-top:0.65rem">Войти</button></p>';
+      $("#btn-list-login")?.addEventListener("click", () => window.requestAuth());
     }
     return;
   }
@@ -587,7 +662,7 @@ function renderPersonList() {
     .map((p) => {
       const active = p.id === state.selectedId ? "active" : "";
       return `
-        <div class="person-item ${active}" data-id="${p.id}" role="button" tabindex="0">
+        <div class="person-item ${active}" data-id="${p.id}" role="option" aria-selected="${p.id === state.selectedId}" tabindex="0">
           ${avatarHtml(p, "avatar")}
           <div class="person-meta">
             <div class="name">${escapeHtml(p.full_name)}</div>
@@ -611,12 +686,15 @@ async function selectPerson(id, { openDetail = false } = {}) {
   state.selectedId = id;
   renderPersonList();
   el.toolbarHint.textContent = "";
+  // На телефоне после выбора закрываем drawer, чтобы сразу видеть дерево
+  if (isMobileLayout()) {
+    setSidebarOpen(false);
+  }
   try {
     await renderMainView();
     if (openDetail) await showDetail(id);
   } catch (e) {
     if (e.message === "Authorization cancelled or failed") {
-      // Пользователь отменил авторизацию
       el.canvas.classList.add("hidden");
       el.empty.classList.remove("hidden");
     } else {
@@ -894,16 +972,19 @@ async function openPersonModalEdit(id) {
   if (person.photo_url) {
     photoImg.src = person.photo_url;
     photoPreview.style.display = "block";
+    photoPreview.classList.add("visible");
     placeholder.style.display = "none";
+    delBtn.hidden = false;
     delBtn.style.display = "inline-flex";
     $("#p-photo-path").value = person.photo_url || "";
     photoSection.classList.remove("hidden");
   } else {
     photoPreview.style.display = "none";
+    photoPreview.classList.remove("visible");
     placeholder.style.display = "block";
+    delBtn.hidden = true;
     delBtn.style.display = "none";
     $("#p-photo-path").value = "";
-    // показываем секцию, даже если фото нет
     photoSection.classList.remove("hidden");
   }
   openModal("modal-person");
@@ -1165,12 +1246,17 @@ async function onPhotoFileSelected(e) {
       body: form,
     });
     toast("Фото загружено");
-    // показать превью
     const photoImg = $("#photo-preview-img");
+    const preview = $("#photo-preview");
+    const delBtn = $("#btn-delete-photo");
     photoImg.src = media.url;
-    $("#photo-preview").style.display = "block";
+    preview.style.display = "block";
+    preview.classList.add("visible");
     $("#photo-placeholder").style.display = "none";
-    $("#btn-delete-photo").style.display = "inline-flex";
+    if (delBtn) {
+      delBtn.hidden = false;
+      delBtn.style.display = "inline-flex";
+    }
     $("#p-photo-path").value = media.url;
   } catch (err) {
     toast(err.message || "Не удалось загрузить фото", "error");
@@ -1185,10 +1271,15 @@ async function onDeletePhoto() {
   try {
     await apiWithEditorAccess(`/persons/${editId}/photo/all`, { method: "DELETE" });
     toast("Фото удалено");
-    // скрыть превью
-    $("#photo-preview").style.display = "none";
+    const preview = $("#photo-preview");
+    const delBtn = $("#btn-delete-photo");
+    preview.style.display = "none";
+    preview.classList.remove("visible");
     $("#photo-placeholder").style.display = "block";
-    $("#btn-delete-photo").style.display = "none";
+    if (delBtn) {
+      delBtn.hidden = true;
+      delBtn.style.display = "none";
+    }
     $("#p-photo-path").value = "";
     $("#photo-preview-img").src = "";
   } catch (err) {
@@ -1213,123 +1304,123 @@ function updateRelationLabels() {
 
 function bindEvents() {
   let searchTimer;
-  el.search.addEventListener("input", () => {
+  el.search?.addEventListener("input", () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => loadPeople(el.search.value.trim()), 250);
   });
 
-  el.personList.addEventListener("click", (e) => {
+  el.personList?.addEventListener("click", (e) => {
     const item = e.target.closest(".person-item");
     if (item) selectPerson(Number(item.dataset.id), { openDetail: true });
   });
 
-  // Add touch support for mobile devices
-  el.personList.addEventListener("touchend", (e) => {
+  el.personList?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
     const item = e.target.closest(".person-item");
     if (item) {
-      e.preventDefault(); // Prevent click event from firing
+      e.preventDefault();
       selectPerson(Number(item.dataset.id), { openDetail: true });
     }
   });
 
-  el.personList.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
-    const item = e.target.closest(".person-item");
-    if (item) selectPerson(Number(item.dataset.id), { openDetail: true });
-  });
-
-  el.canvas.addEventListener("click", (e) => {
+  el.canvas?.addEventListener("click", (e) => {
     const card = e.target.closest(".person-card");
     if (card) showDetail(Number(card.dataset.id));
   });
 
-  // Add touch support for tree cards
-  el.canvas.addEventListener("touchend", (e) => {
-    const card = e.target.closest(".person-card");
-    if (card) {
-      e.preventDefault(); // Prevent click event from firing
-      showDetail(Number(card.dataset.id));
-    }
-  });
-
-  el.detailRel.addEventListener("click", (e) => {
+  el.detailRel?.addEventListener("click", (e) => {
     const chip = e.target.closest(".rel-chip");
     if (chip) selectPerson(Number(chip.dataset.id), { openDetail: true });
   });
 
-  el.pathResult.addEventListener("click", (e) => {
+  el.pathResult?.addEventListener("click", (e) => {
     if (e.target.id === "btn-back-tree") {
       state.view = "tree";
-      $$("#view-tabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.view === "tree"));
+      $$("#view-tabs .tab").forEach((t) => {
+        const on = t.dataset.view === "tree";
+        t.classList.toggle("active", on);
+        t.setAttribute("aria-selected", on ? "true" : "false");
+      });
       el.pathResult.classList.add("hidden");
       if (state.selectedId) renderMainView();
-      else {
-        el.empty.classList.remove("hidden");
-      }
+      else el.empty.classList.remove("hidden");
       return;
     }
     const chip = e.target.closest(".rel-chip");
     if (chip) selectPerson(Number(chip.dataset.id), { openDetail: true });
   });
 
-  $("#btn-close-detail").addEventListener("click", () => el.detail.classList.add("hidden"));
-  $("#btn-set-root").addEventListener("click", () => {
+  $("#btn-close-detail")?.addEventListener("click", () => el.detail.classList.add("hidden"));
+  $("#btn-set-root")?.addEventListener("click", () => {
     const id = Number(el.detail.dataset.personId);
     if (id) {
       state.view = "tree";
-      $$("#view-tabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.view === "tree"));
+      $$("#view-tabs .tab").forEach((t) => {
+        const on = t.dataset.view === "tree";
+        t.classList.toggle("active", on);
+        t.setAttribute("aria-selected", on ? "true" : "false");
+      });
       selectPerson(id);
     }
   });
-  $("#btn-edit-person").addEventListener("click", () => {
+  $("#btn-edit-person")?.addEventListener("click", () => {
     const id = Number(el.detail.dataset.personId);
     if (id) openPersonModalEdit(id).catch((e) => toast(e.message, "error"));
   });
-  $("#btn-delete-person").addEventListener("click", deleteSelectedPerson);
+  $("#btn-delete-person")?.addEventListener("click", deleteSelectedPerson);
 
-  $("#btn-add-person").addEventListener("click", openPersonModalCreate);
-  $("#btn-upload-photo").addEventListener("click", () => $("#photo-file-input").click());
-  $("#photo-file-input").addEventListener("change", onPhotoFileSelected);
-  $("#btn-delete-photo").addEventListener("click", onDeletePhoto);
-  $("#btn-add-relation").addEventListener("click", () => {
+  $("#btn-add-person")?.addEventListener("click", openPersonModalCreate);
+  $("#btn-upload-photo")?.addEventListener("click", () => $("#photo-file-input")?.click());
+  $("#photo-file-input")?.addEventListener("change", onPhotoFileSelected);
+  $("#btn-delete-photo")?.addEventListener("click", onDeletePhoto);
+  $("#btn-add-relation")?.addEventListener("click", () => {
     fillRelationSelects();
     updateRelationLabels();
     openModal("modal-relation");
   });
-  $("#btn-import").addEventListener("click", () => $("#file-gramps").click());
-  $("#file-gramps").addEventListener("change", onImportGramps);
-  $("#btn-export-obsidian").addEventListener("click", onExportObsidian);
-  $("#btn-path").addEventListener("click", () => {
+  $("#btn-import")?.addEventListener("click", () => {
+    closeHeaderMenu();
+    $("#file-gramps")?.click();
+  });
+  $("#file-gramps")?.addEventListener("change", onImportGramps);
+  $("#btn-export-obsidian")?.addEventListener("click", () => {
+    closeHeaderMenu();
+    onExportObsidian();
+  });
+  $("#btn-path")?.addEventListener("click", () => {
+    closeHeaderMenu();
     fillRelationSelects();
     openModal("modal-path");
   });
-  $("#btn-refresh").addEventListener("click", () => {
+  $("#btn-refresh")?.addEventListener("click", () => {
     if (state.selectedId) renderMainView().catch((e) => toast(e.message, "error"));
   });
 
-  el.depthUp.addEventListener("change", () => {
+  el.depthUp?.addEventListener("change", () => {
     if (state.selectedId && state.view === "tree") renderMainView();
   });
-  el.depthDown.addEventListener("change", () => {
+  el.depthDown?.addEventListener("change", () => {
     if (state.selectedId && state.view === "tree") renderMainView();
   });
 
   $$("#view-tabs .tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       state.view = tab.dataset.view;
-      $$("#view-tabs .tab").forEach((t) => t.classList.toggle("active", t === tab));
+      $$("#view-tabs .tab").forEach((t) => {
+        const on = t === tab;
+        t.classList.toggle("active", on);
+        t.setAttribute("aria-selected", on ? "true" : "false");
+      });
       el.pathResult.classList.add("hidden");
       if (state.selectedId) renderMainView().catch((e) => toast(e.message, "error"));
     });
   });
 
-  $("#form-person").addEventListener("submit", onSavePerson);
-  $("#btn-upload-photo").addEventListener("click", () => $("#photo-file-input").click());
-  $("#photo-file-input").addEventListener("change", onPhotoFileSelected);
-  $("#btn-delete-photo").addEventListener("click", onDeletePhoto);
-  $("#form-relation").addEventListener("submit", onCreateRelation);
-  $("#form-path").addEventListener("submit", onFindPath);
-  $("#r-type").addEventListener("change", updateRelationLabels);
+  $("#form-person")?.addEventListener("submit", onSavePerson);
+  $("#form-relation")?.addEventListener("submit", onCreateRelation);
+  $("#form-path")?.addEventListener("submit", onFindPath);
+  $("#r-type")?.addEventListener("change", updateRelationLabels);
+  $("#auth-level")?.addEventListener("change", updateAuthTokenHint);
 
   $$("[data-close]").forEach((btn) => {
     btn.addEventListener("click", () => closeModal(btn.dataset.close));
@@ -1342,170 +1433,146 @@ function bindEvents() {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      $$(".modal-overlay:not(.hidden)").forEach((m) => m.classList.add("hidden"));
+    if (e.key !== "Escape") return;
+    // auth-модалка закрывается своим обработчиком (openAuthModal)
+    if ($("#modal-auth")?.dataset.authPending === "1") return;
+    const openModals = $$(".modal-overlay:not(.hidden)");
+    if (openModals.length) {
+      openModals.forEach((m) => m.classList.add("hidden"));
+      return;
+    }
+    if (!el.headerMenuPanel?.classList.contains("hidden")) {
+      closeHeaderMenu();
+      return;
+    }
+    if (el.detail && !el.detail.classList.contains("hidden")) {
+      el.detail.classList.add("hidden");
+      return;
+    }
+    if (isMobileLayout() && el.sidebar?.classList.contains("open")) {
+      setSidebarOpen(false);
     }
   });
 
-  // Mobile sidebar toggle
-  const btnToggleSidebar = document.getElementById("btn-toggle-sidebar");
-  const sidebar = document.querySelector(".sidebar");
+  // Sidebar drawer / collapse
+  el.toggleSidebar?.addEventListener("click", () => toggleSidebar());
+  el.closeSidebar?.addEventListener("click", () => setSidebarOpen(false));
+  el.sidebarBackdrop?.addEventListener("click", () => setSidebarOpen(false));
+  el.emptyOpenList?.addEventListener("click", () => setSidebarOpen(true));
 
-  if (btnToggleSidebar && sidebar) {
-    let isCollapsed = false;
+  // Header overflow menu
+  el.headerMore?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleHeaderMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#header-menu")) closeHeaderMenu();
+  });
 
-    // Don't collapse by default even on mobile
-    btnToggleSidebar.addEventListener("click", () => {
-      isCollapsed = !isCollapsed;
-      sidebar.classList.toggle("collapsed", isCollapsed);
-      btnToggleSidebar.style.opacity = isCollapsed ? "0.6" : "1";
-    });
+  // Начальное состояние сайдбара
+  if (isMobileLayout()) {
+    setSidebarOpen(false);
+    el.sidebarBackdrop?.classList.add("hidden");
+  } else {
+    setSidebarOpen(true);
   }
+
+  MOBILE_MQ.addEventListener?.("change", () => {
+    if (isMobileLayout()) {
+      setSidebarOpen(false);
+      el.app?.classList.remove("sidebar-collapsed");
+    } else {
+      el.sidebar?.classList.remove("open");
+      el.sidebarBackdrop?.classList.remove("open");
+      el.sidebarBackdrop?.classList.add("hidden");
+      setSidebarOpen(true);
+    }
+  });
 
   // Auth UI
   const authStatus = document.getElementById("auth-status");
   const btnAuth = document.getElementById("btn-auth");
-  
+
   function updateAuthUI() {
     const isAuthenticated = jwtManager.isTokenValid();
     const isEditor = jwtManager.userRole === "editor";
     state.isAuthenticated = isAuthenticated;
     state.userRole = jwtManager.userRole;
-    
+
     if (authStatus) {
       if (isAuthenticated) {
         const roleText = isEditor ? "Редактор" : "Просмотр";
-        authStatus.innerHTML = `<span class="auth-indicator auth-indicator--active" title="${roleText}"></span> ${roleText}`;
+        authStatus.innerHTML = `<span class="auth-indicator auth-indicator--active" title="${roleText}"></span><span class="auth-role-text">${roleText}</span>`;
         authStatus.title = `Роль: ${roleText}`;
       } else {
-        authStatus.innerHTML = `<span class="auth-indicator auth-indicator--inactive"></span>`;
+        authStatus.innerHTML = `<span class="auth-indicator auth-indicator--inactive" title="Не авторизован"></span>`;
         authStatus.title = "Не авторизован";
       }
     }
-    
+
     if (btnAuth) {
       btnAuth.textContent = isAuthenticated ? "🚪" : "🔐";
       btnAuth.title = isAuthenticated ? "Выйти" : "Войти";
+      btnAuth.setAttribute("aria-label", isAuthenticated ? "Выйти" : "Войти");
     }
-    
-    // Блокируем кнопки редактирования для viewers
+
     const editButtons = [
-      document.getElementById("btn-add-person"),
-      document.getElementById("btn-add-relation"),
-      document.getElementById("btn-import"),
-      document.getElementById("btn-export-obsidian"),
-      document.getElementById("btn-edit-person"),
-      document.getElementById("btn-delete-person"),
-      document.getElementById("btn-upload-photo"),
-      document.getElementById("btn-delete-photo"),
-      document.getElementById("btn-person-submit"),
-      document.getElementById("btn-back-tree")
-    ];
-    
-    editButtons.forEach(btn => {
-      if (btn && isAuthenticated && !isEditor) {
+      "btn-add-person",
+      "btn-add-relation",
+      "btn-import",
+      "btn-export-obsidian",
+      "btn-edit-person",
+      "btn-delete-person",
+      "btn-upload-photo",
+      "btn-delete-photo",
+      "btn-person-submit",
+      "btn-back-tree",
+    ].map((id) => document.getElementById(id));
+
+    editButtons.forEach((btn) => {
+      if (!btn) return;
+      if (isAuthenticated && !isEditor) {
         btn.disabled = true;
         btn.title = "Требуются права редактирования";
-        if (!btn.classList.contains("disabled")) {
-          btn.classList.add("disabled");
-        }
-      } else if (btn) {
+        btn.classList.add("disabled");
+      } else {
         btn.disabled = false;
-        btn.title = btn.title.replace("Требуются права редактирования", "");
+        if (btn.title === "Требуются права редактирования") btn.title = "";
         btn.classList.remove("disabled");
       }
     });
   }
-  
+
+  window.__updateAuthUI = updateAuthUI;
+
   async function handleAuthClick() {
-    state.authRetryCount = 0; // Сбрасываем счетчик попыток при ручном входе через кнопку
-    
+    state.authRetryCount = 0;
     const isAuthenticated = jwtManager.isTokenValid();
-    
+
     if (isAuthenticated) {
-      // Выход
       if (confirm("Выйти из системы?")) {
         jwtManager.clearToken();
         updateAuthUI();
-        toastJWT("Вы вышли из системы", "success");
-        // Очищаем данные и перезагружаем
+        toast("Вы вышли из системы", "success");
         state.people = [];
         state.selectedId = null;
+        el.canvas?.classList.add("hidden");
+        el.detail?.classList.add("hidden");
+        el.empty?.classList.remove("hidden");
         renderPersonList();
       }
-    } else {
-      // Вход
-      const level = prompt("Введите уровень доступа:\n1 - Для просмотра (токен: family по умолчанию)\n2 - Для редактирования (токен: secret по умолчанию)\n\nВведите 1 или 2:");
-      
-      if (level === null) return;
-      
-      let token = "";
-      if (level.trim() === "1") {
-        token = prompt("Введите токен для просмотра (по умолчанию: family):") || "family";
-      } else {
-        token = prompt("Введите токен для редактирования (по умолчанию: secret):") || "secret";
-      }
-      
-      const trimmed = token.trim();
-      if (!trimmed) {
-        alert("Токен не может быть пустым!");
-        return;
-      }
-      
-      const success = await jwtManager.loginWithToken(trimmed);
-      if (success) {
-        state.isAuthenticated = true;
-        state.authRetryCount = 0; // Сбрасываем счетчик при успехе
-        // Загружаем данные после авторизации
-        loadPeople();
-      } else {
-        alert("❌ Неверный токен авторизации!\n\nПроверьте правильность токена и попробуйте снова.");
-      }
+      return;
+    }
+
+    const success = await openAuthModal();
+    if (success) {
+      updateAuthUI();
     }
   }
-  
-  if (btnAuth) {
-    btnAuth.addEventListener("click", handleAuthClick);
-  }
-  
-  // Обновляем UI при загрузке
+
+  btnAuth?.addEventListener("click", handleAuthClick);
   updateAuthUI();
-  
-  // Следим за изменением статуса токена
-  setInterval(updateAuthUI, 60000); // Каждую минуту
-  
-  // Добавляем CSS для индикаторов авторизации
-  const style = document.createElement("style");
-  style.textContent = `
-    .auth-section {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .auth-status {
-      display: flex;
-      align-items: center;
-    }
-    
-    .auth-indicator {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      display: inline-block;
-    }
-    
-    .auth-indicator--active {
-      background-color: #4CAF50;
-      box-shadow: 0 0 4px #4CAF50;
-    }
-    
-    .auth-indicator--inactive {
-      background-color: #f44336;
-      box-shadow: 0 0 4px #f44336;
-    }
-  `;
-  document.head.appendChild(style);
+  setInterval(updateAuthUI, 60000);
 }
 
 // ── Init ───────────────────────────────────────────────

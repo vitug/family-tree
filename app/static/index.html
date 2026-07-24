@@ -2,7 +2,9 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a222d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Семейное дерево</title>
   <link rel="stylesheet" href="/static/css/styles.css" />
 </head>
@@ -10,68 +12,96 @@
   <div class="app">
     <header class="header">
       <div class="logo">
-        <button class="btn btn-ghost" id="btn-toggle-sidebar" type="button" title="Показать/скрыть список людей">
-          <span>☰</span>
+        <button class="btn btn-ghost btn-icon" id="btn-toggle-sidebar" type="button" title="Список людей" aria-label="Список людей" aria-expanded="false" aria-controls="sidebar">
+          <span aria-hidden="true">☰</span>
         </button>
-        <div class="logo-icon">🌳</div>
-        <span>Семейное дерево</span>
+        <div class="logo-icon" aria-hidden="true">🌳</div>
+        <span class="logo-text">Семейное дерево</span>
       </div>
+
       <div class="header-actions">
-        <button class="btn btn-primary" id="btn-add-person" type="button">+ Человек</button>
-        <button class="btn" id="btn-add-relation" type="button">+ Связь</button>
-        <button class="btn btn-ghost" id="btn-import" type="button">Импорт Gramps</button>
-        <button class="btn btn-ghost" id="btn-export-obsidian" type="button">Экспорт Obsidian</button>
-        <button class="btn btn-ghost" id="btn-path" type="button">Путь родства</button>
-        
+        <button class="btn btn-primary" id="btn-add-person" type="button">
+          <span class="btn-label-full">+ Человек</span>
+          <span class="btn-label-short" aria-hidden="true">+</span>
+        </button>
+        <button class="btn header-btn-secondary" id="btn-add-relation" type="button" title="Добавить связь">
+          <span class="btn-label-full">+ Связь</span>
+          <span class="btn-label-short" aria-hidden="true">🔗</span>
+        </button>
+
+        <div class="header-menu" id="header-menu">
+          <button class="btn btn-ghost" id="btn-header-more" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="header-menu-panel" title="Ещё действия">
+            <span class="btn-label-full">Ещё ▾</span>
+            <span class="btn-label-short" aria-hidden="true">⋯</span>
+          </button>
+          <div class="header-menu-panel hidden" id="header-menu-panel" role="menu">
+            <button class="header-menu-item" id="btn-path" type="button" role="menuitem">Путь родства</button>
+            <button class="header-menu-item" id="btn-import" type="button" role="menuitem">Импорт Gramps</button>
+            <button class="header-menu-item" id="btn-export-obsidian" type="button" role="menuitem">Экспорт Obsidian</button>
+          </div>
+        </div>
+
         <div class="auth-section">
-          <div id="auth-status" class="auth-status"></div>
-          <button class="btn btn-ghost btn-sm" id="btn-auth" type="button" title="Вход/Выход"></button>
+          <div id="auth-status" class="auth-status" aria-live="polite"></div>
+          <button class="btn btn-ghost btn-icon" id="btn-auth" type="button" title="Вход / Выход" aria-label="Авторизация">🔐</button>
           <input type="file" id="file-gramps" accept=".gpkg,.gramps,.xml,application/gzip,application/xml" hidden />
         </div>
       </div>
     </header>
 
-    <aside class="sidebar">
+    <div class="sidebar-backdrop hidden" id="sidebar-backdrop" aria-hidden="true"></div>
+
+    <aside class="sidebar" id="sidebar" aria-label="Список людей">
       <div class="sidebar-section">
-        <h2>Люди</h2>
+        <div class="sidebar-heading">
+          <h2>Люди</h2>
+          <button class="btn btn-sm btn-ghost sidebar-close" id="btn-close-sidebar" type="button" aria-label="Закрыть список">✕</button>
+        </div>
         <div class="search-wrap">
-          <input class="input" id="search" type="search" placeholder="Поиск по имени…" autocomplete="off" />
+          <input class="input" id="search" type="search" placeholder="Поиск по имени…" autocomplete="off" enterkeyhint="search" />
         </div>
       </div>
-      <div class="person-list" id="person-list"></div>
+      <div class="person-list" id="person-list" role="listbox" aria-label="Люди в дереве"></div>
     </aside>
 
     <main class="main">
       <div class="toolbar">
-        <div class="tabs" id="view-tabs">
-          <button class="tab active" data-view="tree" type="button">Дерево</button>
-          <button class="tab" data-view="relatives" type="button">Родственники</button>
+        <div class="toolbar-row toolbar-row-primary">
+          <div class="tabs" id="view-tabs" role="tablist">
+            <button class="tab active" data-view="tree" type="button" role="tab" aria-selected="true">Дерево</button>
+            <button class="tab" data-view="relatives" type="button" role="tab" aria-selected="false">Родственники</button>
+          </div>
+          <span id="toolbar-hint" class="toolbar-hint"></span>
         </div>
-        <label>
-          Вверх
-          <input class="input" id="depth-up" type="number" min="0" max="10" value="2" style="width: 56px" />
-        </label>
-        <label>
-          Вниз
-          <input class="input" id="depth-down" type="number" min="0" max="10" value="2" style="width: 56px" />
-        </label>
-        <button class="btn btn-sm" id="btn-refresh" type="button">Обновить</button>
-        <span id="toolbar-hint" style="color: var(--text-muted); font-size: 0.8rem; margin-left: auto"></span>
+        <div class="toolbar-row toolbar-row-controls">
+          <label class="depth-label">
+            Вверх
+            <input class="input depth-input" id="depth-up" type="number" min="0" max="10" value="2" inputmode="numeric" />
+          </label>
+          <label class="depth-label">
+            Вниз
+            <input class="input depth-input" id="depth-down" type="number" min="0" max="10" value="2" inputmode="numeric" />
+          </label>
+          <button class="btn btn-sm" id="btn-refresh" type="button">Обновить</button>
+        </div>
       </div>
 
       <div class="view-area" id="view-area">
         <div class="empty-state" id="empty-state">
-          <div class="icon">👨‍👩‍👧‍👦</div>
+          <div class="icon" aria-hidden="true">👨‍👩‍👧‍👦</div>
           <h3>Выберите человека</h3>
-          <p>Кликните по человеку в списке слева,<br />чтобы построить его семейное дерево</p>
+          <p class="empty-hint-desktop">Кликните по человеку в списке слева,<br />чтобы построить его семейное дерево</p>
+          <p class="empty-hint-mobile">Откройте список людей (☰) и выберите человека</p>
+          <button class="btn btn-primary empty-open-list" id="btn-empty-open-list" type="button">Открыть список</button>
         </div>
         <div class="tree-canvas hidden" id="tree-canvas"></div>
         <div class="path-result hidden" id="path-result"></div>
 
-        <aside class="detail-panel hidden" id="detail-panel">
+        <aside class="detail-panel hidden" id="detail-panel" aria-label="Карточка человека">
+          <div class="detail-sheet-handle" aria-hidden="true"></div>
           <button class="btn btn-sm btn-ghost close-btn" id="btn-close-detail" type="button" aria-label="Закрыть">✕</button>
           <h3 id="detail-name"></h3>
-          <p id="detail-sub" style="color: var(--text-muted); font-size: 0.85rem"></p>
+          <p id="detail-sub" class="detail-sub"></p>
           <div id="detail-relatives"></div>
           <div class="detail-actions">
             <button class="btn btn-sm btn-primary" id="btn-edit-person" type="button">Редактировать</button>
@@ -83,24 +113,52 @@
     </main>
   </div>
 
+  <!-- Modal: auth -->
+  <div class="modal-overlay hidden" id="modal-auth">
+    <div class="modal modal-auth" role="dialog" aria-labelledby="modal-auth-title" aria-modal="true">
+      <h2 id="modal-auth-title">Вход</h2>
+      <p class="modal-lead">Выберите уровень доступа и введите токен.</p>
+      <form id="form-auth">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="auth-level">Уровень доступа</label>
+            <select class="select" id="auth-level" name="level">
+              <option value="viewer">Просмотр</option>
+              <option value="editor">Редактирование</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="auth-token">Токен</label>
+            <input class="input" id="auth-token" name="token" type="password" autocomplete="current-password" placeholder="Введите токен" required />
+            <p class="field-hint" id="auth-token-hint">По умолчанию для просмотра: family</p>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" data-close="modal-auth">Отмена</button>
+          <button class="btn btn-primary" type="submit">Войти</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: person (create / edit) -->
   <div class="modal-overlay hidden" id="modal-person">
-    <div class="modal" role="dialog" aria-labelledby="modal-person-title">
+    <div class="modal" role="dialog" aria-labelledby="modal-person-title" aria-modal="true">
       <h2 id="modal-person-title">Новый человек</h2>
       <form id="form-person">
         <input type="hidden" id="p-id" name="id" value="" />
         <div class="form-grid">
           <div class="field">
             <label for="p-last">Фамилия</label>
-            <input class="input" id="p-last" name="last_name" />
+            <input class="input" id="p-last" name="last_name" autocomplete="family-name" />
           </div>
           <div class="field">
             <label for="p-first">Имя *</label>
-            <input class="input" id="p-first" name="first_name" required />
+            <input class="input" id="p-first" name="first_name" required autocomplete="given-name" />
           </div>
           <div class="field">
             <label for="p-middle">Отчество</label>
-            <input class="input" id="p-middle" name="middle_name" />
+            <input class="input" id="p-middle" name="middle_name" autocomplete="additional-name" />
           </div>
           <div class="field">
             <label for="p-maiden">Девичья фамилия</label>
@@ -132,17 +190,17 @@
             <textarea class="textarea" id="p-notes" name="notes"></textarea>
           </div>
         </div>
-        <div class="field full photo-section" id="modal-photo-section" style="margin-top:1rem;padding:1rem;background:var(--bg);border-radius:10px;border:1px dashed var(--border);">
-          <label style="font-size:0.75rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.35rem;">Фото</label>
-          <div id="photo-preview-container" style="text-align:center;min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.5rem;">
-            <div id="photo-preview" style="max-width:160px;max-height:160px;overflow:hidden;border-radius:8px;display:none;">
-              <img id="photo-preview-img" src="" alt="" style="width:100%;height:auto;object-fit:cover;display:block;" />
+        <div class="field full photo-section" id="modal-photo-section">
+          <label class="photo-section-label">Фото</label>
+          <div id="photo-preview-container" class="photo-preview-container">
+            <div id="photo-preview" class="photo-preview">
+              <img id="photo-preview-img" src="" alt="" />
             </div>
-            <div id="photo-placeholder" style="font-size:2.5rem;opacity:0.3;">📷</div>
-            <div id="photo-actions" style="display:flex;gap:0.35rem;flex-wrap:wrap;justify-content:center;">
+            <div id="photo-placeholder" class="photo-placeholder" aria-hidden="true">📷</div>
+            <div id="photo-actions" class="photo-actions">
               <input type="file" id="photo-file-input" accept="image/*" hidden />
               <button class="btn btn-sm" type="button" id="btn-upload-photo">Загрузить фото</button>
-              <button class="btn btn-sm btn-danger" type="button" id="btn-delete-photo" style="display:none;">Удалить фото</button>
+              <button class="btn btn-sm btn-danger" type="button" id="btn-delete-photo" hidden>Удалить фото</button>
             </div>
           </div>
           <input type="hidden" id="p-photo-path" name="photo_path" value="" />
@@ -157,7 +215,7 @@
 
   <!-- Modal: relationship -->
   <div class="modal-overlay hidden" id="modal-relation">
-    <div class="modal" role="dialog" aria-labelledby="modal-relation-title">
+    <div class="modal" role="dialog" aria-labelledby="modal-relation-title" aria-modal="true">
       <h2 id="modal-relation-title">Новая связь</h2>
       <form id="form-relation">
         <div class="form-grid">
@@ -187,7 +245,7 @@
 
   <!-- Modal: path -->
   <div class="modal-overlay hidden" id="modal-path">
-    <div class="modal" role="dialog" aria-labelledby="modal-path-title">
+    <div class="modal" role="dialog" aria-labelledby="modal-path-title" aria-modal="true">
       <h2 id="modal-path-title">Путь родства</h2>
       <form id="form-path">
         <div class="form-grid">
@@ -208,7 +266,7 @@
     </div>
   </div>
 
-  <div class="toast-container" id="toasts"></div>
+  <div class="toast-container" id="toasts" aria-live="polite"></div>
   <script src="/static/js/app.js" type="module"></script>
 </body>
 </html>

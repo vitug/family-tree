@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Search</title>
+</head>
+<body>
+    <h1>Тест поиска</h1>
+    
+    <div>
+        <label for="searchInput">Поиск по имени:</label>
+        <input type="text" id="searchInput" placeholder="Например: vitug">
+        <button onclick="testSearch()">Искать</button>
+    </div>
+    
+    <div id="debugInfo" style="margin-top: 20px; border: 1px solid #ccc; padding: 10px;">
+        <h3>Debug Info:</h3>
+        <pre id="debugOutput">Нажмите "Искать" для теста...</pre>
+    </div>
+    
+    <div id="results" style="margin-top: 20px; border: 1px solid #ccc; padding: 10px;">
+        <h3>Результаты:</h3>
+        <pre id="resultsOutput">-</pre>
+    </div>
+
+    <script>
+        const API = "/api/v1";
+        let accessToken = null;
+
+        // Сначала авторизуемся
+        fetch(`${API}/auth/token`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: "family" })
+        })
+        .then(res => res.json())
+        .then(data => {
+            accessToken = data.access_token;
+            console.log("Authorized successfully");
+        })
+        .catch(err => {
+            console.error("Auth error:", err);
+            updateDebug(`Ошибка авторизации: ${err.message}`);
+        });
+
+        function updateDebug(text) {
+            document.getElementById('debugOutput').textContent = text;
+        }
+
+        function updateResults(text) {
+            document.getElementById('resultsOutput').textContent = text;
+        }
+
+        function testSearch() {
+            const searchTerm = document.getElementById('searchInput').value.trim();
+            console.log("Search term:", searchTerm);
+            console.log("Search term length:", searchTerm.length);
+            console.log("Search term code points:", [...searchTerm].map(c => `${c} (${c.charCodeAt(0)})`));
+            
+            if (!accessToken) {
+                updateDebug("Нет токена авторизации. Подождите...");
+                return;
+            }
+
+            if (!searchTerm) {
+                updateDebug("Введите поисковый запрос");
+                return;
+            }
+
+            // Кодируем параметр
+            const encodedTerm = encodeURIComponent(searchTerm);
+            const fullUrl = `${API}/persons?q=${encodedTerm}`;
+            
+            console.log("Full URL:", fullUrl);
+            console.log("Search term encoded:", encodedTerm);
+            
+            updateDebug(`Поисковый запрос: "${searchTerm}"
+Кодированный: "${encodedTerm}"
+URL: "${fullUrl}"`);
+
+            fetch(fullUrl, {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${accessToken}`,
+                    "Content-Type": "application/json"
+                }
+            })
+            .then(response => {
+                console.log("Response status:", response.status);
+                console.log("Response ok:", response.ok);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log("Received data:", data);
+                const JSONResults = JSON.stringify(data, null, 2);
+                updateResults(`Найдено: ${data.length} результатов\n\n${JSONResults}`);
+            })
+            .catch(error => {
+                console.error("Search error:", error);
+                updateResults(`Ошибка поиска: ${error.message}`);
+            });
+        }
+    </script>
+</body>
+</html>
