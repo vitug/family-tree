@@ -21,14 +21,7 @@ from app.schemas import (
     TreeResponse,
 )
 
-# Добавим пользовательскую функцию для кириллицы
-def cyrillic_lower(text: str | None) -> str | None:
-    """Функция для корректного перевода кириллицы в нижний регистр."""
-    if text is None:
-        return None
-    return text.lower()
-
-
+# cyrillic_lower регистрируется один раз в app.database при connect
 class TreeService:
     """Сервис управления людьми, родственными связями и построением дерева."""
 
@@ -59,17 +52,14 @@ class TreeService:
     ) -> list[Person]:
         stmt = select(Person).order_by(Person.id)
         if q:
-            pattern = f"%{q}%"
-            # Регистрируем пользовательскую функцию для текущего соединения
-            self.db.connection().connection.create_function("cyrillic_lower", 1, cyrillic_lower)
-            
-            # Используем пользовательскую функцию для поиска без учета регистра
-            lower_pattern = pattern.lower()
+            pattern = f"%{q.strip().lower()}%"
+            # Функция cyrillic_lower уже зарегистрирована на engine (см. database.py)
             stmt = stmt.where(
                 or_(
-                    func.cyrillic_lower(Person.first_name).like(lower_pattern),
-                    func.cyrillic_lower(Person.last_name).like(lower_pattern),
-                    func.cyrillic_lower(Person.middle_name).like(lower_pattern),
+                    func.cyrillic_lower(Person.first_name).like(pattern),
+                    func.cyrillic_lower(Person.last_name).like(pattern),
+                    func.cyrillic_lower(Person.middle_name).like(pattern),
+                    func.cyrillic_lower(Person.maiden_name).like(pattern),
                 )
             )
         return list(self.db.scalars(stmt.offset(skip).limit(limit)).all())

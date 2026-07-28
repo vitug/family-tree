@@ -73,8 +73,10 @@ class Person(Base):
 
     @property
     def photo_url(self) -> str | None:
+        """URL для защищённого эндпоинта /media/... (нужен JWT / access_token)."""
         if self.photo_path:
-            return f"/media/{self.photo_path.replace(chr(92), '/')}"
+            rel = self.photo_path.replace(chr(92), "/").lstrip("/")
+            return f"/media/{rel}"
         return None
 
 
@@ -130,4 +132,6 @@ class Media(Base):
 
     @property
     def url(self) -> str:
-        return f"/media/{self.file_path.replace(chr(92), '/')}"
+        """URL для защищённого эндпоинта /media/... (нужен JWT / access_token)."""
+        rel = self.file_path.replace(chr(92), "/").lstrip("/")
+        return f"/media/{rel}"

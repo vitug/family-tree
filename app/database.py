@@ -24,14 +24,14 @@ engine = create_engine(settings.database_url, connect_args=connect_args)
 # Добавляем пользовательские функции для работы с кириллицей в SQLite
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
-    """Устанавливает пользовательские функции для SQLite при подключении."""
+    """Регистрирует пользовательские функции для кириллицы при каждом connect."""
     if not settings.database_url.startswith("sqlite"):
         return
-    cursor = dbapi_connection.cursor()
-    # Создаем пользовательские функции для кириллицы
-    cursor.connection.create_function("CYRILLIC_LOWER", 1, cyrillic_lower)
-    cursor.connection.create_function("CYRILLIC_UPPER", 1, cyrillic_upper)
-    cursor.close()
+    # Имена в нижнем регистре — так их вызывает SQLAlchemy func.cyrillic_lower
+    dbapi_connection.create_function("cyrillic_lower", 1, cyrillic_lower)
+    dbapi_connection.create_function("cyrillic_upper", 1, cyrillic_upper)
+    dbapi_connection.create_function("CYRILLIC_LOWER", 1, cyrillic_lower)
+    dbapi_connection.create_function("CYRILLIC_UPPER", 1, cyrillic_upper)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

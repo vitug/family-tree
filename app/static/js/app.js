@@ -64,6 +64,15 @@ const jwtManager = {
     return `Bearer ${this.accessToken}`;
   },
 
+  // URL медиа с access_token (для <img>, которые не шлют Authorization)
+  mediaUrl(url) {
+    if (!url) return url;
+    if (!this.isTokenValid()) return url;
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}access_token=${encodeURIComponent(this.accessToken)}`;
+  },
+
+
   // Вход с использованием токена (view token или edit token)
   async loginWithToken(token) {
     try {
@@ -591,7 +600,7 @@ function initials(person) {
 function avatarHtml(person, extraClass = "avatar") {
   const g = genderClass(person.gender);
   if (person.photo_url) {
-    return `<div class="${extraClass} ${g} has-photo"><img src="${escapeHtml(person.photo_url)}" alt="" loading="lazy" /></div>`;
+    return `<div class="${extraClass} ${g} has-photo"><img src="${escapeHtml(jwtManager.mediaUrl(person.photo_url))}" alt="" loading="lazy" /></div>`;
   }
   return `<div class="${extraClass} ${g}">${escapeHtml(initials(person))}</div>`;
 }
@@ -891,7 +900,7 @@ async function showDetail(id) {
     el.detailSub.insertAdjacentElement("afterend", photoBlock);
   }
   if (person.photo_url) {
-    photoBlock.innerHTML = `<img src="${escapeHtml(person.photo_url)}" alt="${escapeHtml(person.full_name)}" />`;
+    photoBlock.innerHTML = `<img src="${escapeHtml(jwtManager.mediaUrl(person.photo_url))}" alt="${escapeHtml(person.full_name)}" />`;
     photoBlock.classList.remove("hidden");
   } else {
     photoBlock.innerHTML = "";
@@ -970,7 +979,7 @@ async function openPersonModalEdit(id) {
   const placeholder = $("#photo-placeholder");
   const delBtn = $("#btn-delete-photo");
   if (person.photo_url) {
-    photoImg.src = person.photo_url;
+    photoImg.src = jwtManager.mediaUrl(person.photo_url);
     photoPreview.style.display = "block";
     photoPreview.classList.add("visible");
     placeholder.style.display = "none";

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 import logging
 
 from app.config import settings
-from app.security import rate_limit_auth
+from app.security import rate_limit_auth, ensure_not_locked, record_login_result, tokens_equal
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ def require_edit_token(request: Request) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="Требуется токен редактирования (X-Edit-Token)"
         )
-    if token != settings.edit_token:
+    if not tokens_equal(token, settings.edit_token):
         logger.warning(
             "Edit token invalid: %s != %s", token[:4] + "...", settings.edit_token[:4] + "..."
         )
@@ -155,7 +155,7 @@ async def verify_edit_token(request: Request) -> dict[str, bool]:
     """
     logger.info("verify-edit-token called")
     token = (request.headers.get("X-Edit-Token", "") or "").strip()
-    valid = token == settings.edit_token
+    valid = tokens_equal(token, settings.edit_token)
     logger.debug("Token validation result: %s (token provided: %s)", valid, bool(token))
     if not valid and token:
         # token provided but wrong
@@ -172,53 +172,36 @@ async def verify_edit_token(request: Request) -> dict[str, bool]:
 async def login_with_token(request: Request, request_data: TokenRequest) -> TokenResponse:
     """Получить JWT токен в обмен на view token или edit token.
 
-    - view token даёт роль "viewer" (только чтение)
-    - edit token даёт роль "editor" (чтение и запись)
+    - view token → роль "viewer" (только чтение)
+    - edit token → роль "editor" (чтение и запись)
 
-    Защищено от brute-force: rate limiting + временная блокировка.
+    Защищено: rate limiting + brute-force lockout.
     """
-    from app.security import check_brute_force
+    logger.info("Login attempt from %s", request.client.host if request.client else "unknown")
 
-    logger.info("Login attempt")
-    logger.info(f"Received token: {repr(request_data.token)}")
-    logger.info(f"View token: {repr(settings.view_token)}")
-    logger.info(f"Edit token: {repr(settings.edit_token)}")
+    # Только проверка блокировки (без записи попытки)
+    await ensure_not_locked(request)
 
-    # Brute-force проверка: заблокирован ли этот IP?
-    await check_brute_force(request, success=False)  # Пока не знаем успех
-
-    # Удаляем лишние пробелы из настроек
-    clean_view_token = settings.view_token.strip()
-    clean_edit_token = settings.edit_token.strip()
     clean_user_token = request_data.token.strip()
 
-    # Проверка токена и определение роли
     role = None
-    if clean_user_token == clean_view_token:
+    if tokens_equal(clean_user_token, settings.view_token):
         role = "viewer"
         logger.info("Login successful with view token")
-    elif clean_user_token == clean_edit_token:
+    elif tokens_equal(clean_user_token, settings.edit_token):
         role = "editor"
         logger.info("Login successful with edit token")
     else:
-        logger.warning("Invalid token for login")
-        logger.warning(
-            f"Token comparison failed: {repr(clean_user_token)} != {repr(clean_view_token)} and {repr(clean_user_token)} != {repr(clean_edit_token)}"
-        )
-        # Фиксируем неудачную попытку для anti-brute-force
-        await check_brute_force(request, success=False)
+        logger.warning("Invalid token for login (len=%d)", len(clean_user_token))
+        await record_login_result(request, success=False)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный токен авторизации",
         )
 
-    # Успешная попытка: очищаем brute-force счётчик
-    await check_brute_force(request, success=True)
+    await record_login_result(request, success=True)
 
-    # Создание JWT токена с ролью
     access_token = create_access_token(data={"sub": "user", "role": role})
-
-    # Расчет времени жизни токена в секундах
     expires_in = settings.jwt_access_token_expire_hours * 3600
 
     return TokenResponse(
