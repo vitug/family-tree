@@ -23,6 +23,10 @@ os.environ.setdefault("FAMILY_TREE_EDIT_TOKEN", "test-edit-token-0123456789abcde
 # её логика покрыта юнит-тестами напрямую
 os.environ["FAMILY_TREE_ENABLE_RATE_LIMITING"] = "false"
 os.environ["FAMILY_TREE_ENABLE_BRUTE_FORCE_PROTECTION"] = "false"
+# боевой .env (ROOT_PATH двери, TRUST_PROXY) не должен влиять на тесты —
+# часть тестов импортирует app.* до фикстуры app_env
+os.environ["FAMILY_TREE_ROOT_PATH"] = ""
+os.environ["FAMILY_TREE_TRUST_PROXY"] = "false"
 
 
 @pytest.fixture()
