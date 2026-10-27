@@ -45,11 +45,26 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### Начальный доступ
 
-По умолчанию используется edit токен `secret`. Для получения JWT:
+Есть два способа получить доступ без ввода токенов:
+
+**1. Ссылки-ключи (рекомендуется для семьи).** Сгенерируй два длинных адреса:
+
+```bash
+python scripts/generate_access_links.py --base-url http://<адрес-сервера>:8000
+```
+
+Скрипт создаст (при необходимости) длинные случайные токены в `.env` и напечатает:
+
+- 🔗 **только чтение** — `http://host:8000/api/v1/auth/link/<view-token>`
+- ✏️ **редактирование** — `http://host:8000/api/v1/auth/link/<edit-token>`
+
+Открытие ссылки ставит httpOnly cookie с JWT (24 ч, продлевается автоматически) и редиректит на приложение. Вводить ничего не нужно. Ссылки равносильны паролям — передавать лично. `--force` перегенерирует токены (все старые ссылки отзовутся), `--show` печатает текущие.
+
+**2. Вручную через веб-интерфейс:**
 
 1. Войдите в веб-интерфейс: http://localhost:8000
 2. Нажмите на кнопку 🔐 в правом верхнем углу
-3. Введите токен редактирования: `secret`
+3. Введите токен редактирования: `secret-edit-token-dev` (или заданный в .env)
 4. Получите JWT токен для доступа к защищенным операциям
 
 ### API с JWT токеном
@@ -130,12 +145,13 @@ export FAMILY_TREE_JWT_ALGORITHM=HS256
 # База данных
 export FAMILY_TREE_DATABASE_URL="sqlite:///./family_tree.db"
 
-# JWT аутентификация
-export FAMILY_TREE_JWT_SECRET_KEY="secret-key"
+# JWT аутентификация (ОБЯЗАТЕЛЬНО: без FAMILY_TREE_JWT_SECRET_KEY сервис не стартует;
+# минимум 32 символа)
+export FAMILY_TREE_JWT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export FAMILY_TREE_JWT_ACCESS_TOKEN_EXPIRE_HOURS=24
 
-# Legacy токен (для обратной совместимости)
-export FAMILY_TREE_EDIT_TOKEN="secret"
+# Legacy токен (для обратной совместимости; минимум 12 символов)
+export FAMILY_TREE_EDIT_TOKEN="secret-edit-token-dev"
 
 # Логирование
 export FAMILY_TREE_LOG_LEVEL="INFO"

@@ -37,19 +37,25 @@ class RateLimiter:
 
     async def is_allowed(self, key: str, request: Request) -> bool:
         now = time.time()
-        self.requests[key] = [t for t in self.requests[key] if now - t < self.window_seconds]
+        timestamps = [t for t in self.requests.get(key, ()) if now - t < self.window_seconds]
+        if timestamps:
+            self.requests[key] = timestamps
+        else:
+            # чистим пустые ключи: иначе defaultdict растёт без границы
+            self.requests.pop(key, None)
 
-        if len(self.requests[key]) >= self.max_requests:
+        if len(timestamps) >= self.max_requests:
             logger.warning(
                 "Rate limit exceeded for %s: %d/%d per %ds",
                 key,
-                len(self.requests[key]),
+                len(timestamps),
                 self.max_requests,
                 self.window_seconds,
             )
             return False
 
-        self.requests[key].append(now)
+        timestamps.append(now)
+        self.requests[key] = timestamps
         return True
 
 
@@ -82,15 +88,15 @@ class BruteForceProtection:
 
     def record_attempt(self, key: str, success: bool = False) -> None:
         now = time.time()
-        self.attempts[key] = [t for t in self.attempts[key] if now - t < self.lockout_seconds * 2]
+        attempts = [t for t in self.attempts.get(key, ()) if now - t < self.lockout_seconds * 2]
 
         if success:
-            self.attempts[key].clear()
+            self.attempts.pop(key, None)
             self.lockouts.pop(key, None)
             logger.info("Authentication success for %s, attempts cleared", key)
         else:
-            self.attempts[key].append(now)
-            if len(self.attempts[key]) >= self.max_attempts:
+            attempts.append(now)
+            if len(attempts) >= self.max_attempts:
                 unlock_time = now + self.lockout_seconds
                 self.lockouts[key] = unlock_time
                 logger.warning(
@@ -98,6 +104,10 @@ class BruteForceProtection:
                     key,
                     datetime.fromtimestamp(unlock_time, tz=timezone.utc).isoformat(),
                 )
+            if attempts:
+                self.attempts[key] = attempts
+            else:
+                self.attempts.pop(key, None)
 
     def is_locked(self, key: str) -> bool:
         now = time.time()
@@ -111,7 +121,8 @@ class BruteForceProtection:
         return False
 
 
-BRUTE_PROTECTOR = BruteForceProtection(max_attempts=3, lockout_seconds=300)
+# 5 попыток (было 3): легитимный пользователь с опечатками не запирается на 5 минут
+BRUTE_PROTECTOR = BruteForceProtection(max_attempts=5, lockout_seconds=300)
 
 
 async def ensure_not_locked(request: Request) -> None:
@@ -133,23 +144,6 @@ async def record_login_result(request: Request, success: bool) -> None:
         return
     client_ip = _get_client_ip(request)
     BRUTE_PROTECTOR.record_attempt(f"ip:{client_ip}", success=success)
-
-
-async def check_brute_force(request: Request, success: bool = False) -> None:
-    """
-    Совместимость со старым API.
-    Предпочтительнее: ensure_not_locked + record_login_result.
-    """
-    if not settings.enable_brute_force_protection:
-        return
-    client_ip = _get_client_ip(request)
-    key = f"ip:{client_ip}"
-    if not success and BRUTE_PROTECTOR.is_locked(key):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Слишком много неудачных попыток. Попробуйте через несколько минут.",
-        )
-    BRUTE_PROTECTOR.record_attempt(key, success)
 
 
 # ── Timing-safe token compare ───────────────────────────────────────────────
@@ -185,9 +179,28 @@ def _safe_media_path(relative: str) -> Path:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Недопустимый путь")
     base = Path(settings.media_dir).resolve()
     full = (base / rel).resolve()
-    if not str(full).startswith(str(base)):
+    try:
+        # каноничная проверка принадлежности (вместо prefix-матчинга строк,
+        # который теоретически пропускал бы media2 при базе media)
+        full.relative_to(base)
+    except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Недопустимый путь")
     return full
+
+
+def unlink_media_file(relative_path: str | None) -> None:
+    """Удалить файл с диска по относительному пути внутри media_dir."""
+    if not relative_path:
+        return
+    try:
+        full = _safe_media_path(relative_path)
+        if full.is_file():
+            full.unlink()
+            logger.info("Deleted media file: %s", full)
+    except HTTPException:
+        logger.warning("Skip delete, unsafe or missing path: %s", relative_path)
+    except OSError as exc:
+        logger.warning("Failed to delete media file %s: %s", relative_path, exc)
 
 
 async def get_media_access(
@@ -233,7 +246,7 @@ async def serve_protected_media_by_path(
     db: Session,
 ) -> FileResponse:
     """
-    Раздача по относительному пути (files/...), с JWT через Bearer или ?access_token=.
+    Раздача по относительному пути (files/...), JWT через Bearer или httpOnly cookie.
     """
     await require_media_auth(request)
 
@@ -249,13 +262,15 @@ async def serve_protected_media_by_path(
 
 
 async def require_media_auth(request: Request) -> dict:
-    """JWT из Authorization: Bearer или query access_token (для img)."""
+    """JWT из Authorization: Bearer или httpOnly cookie (не из query — не светим в логах)."""
+    from app.routers.auth import AUTH_COOKIE_NAME, decode_access_token
+
     token: str | None = None
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
     if auth and auth.lower().startswith("bearer "):
         token = auth[7:].strip()
     if not token:
-        token = request.query_params.get("access_token")
+        token = (request.cookies.get(AUTH_COOKIE_NAME) or "").strip() or None
 
     if not token:
         raise HTTPException(
@@ -263,8 +278,6 @@ async def require_media_auth(request: Request) -> dict:
             detail="Требуется авторизация для доступа к медиа",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    from app.routers.auth import decode_access_token
 
     payload = decode_access_token(token)
     if payload.get("role") not in ("viewer", "editor"):
@@ -276,22 +289,30 @@ async def require_media_auth(request: Request) -> dict:
 
 
 async def require_docs_auth(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
 ) -> bool:
-    """Требует JWT токен для доступа к /docs и /openapi.json."""
+    """Требует JWT (Bearer или cookie) для /docs и /openapi.json."""
     if not settings.protect_api_docs:
         return True
-    if not credentials:
+
+    from app.routers.auth import AUTH_COOKIE_NAME, decode_access_token
+
+    token: str | None = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+    if not token:
+        token = (request.cookies.get(AUTH_COOKIE_NAME) or "").strip() or None
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Требуется авторизация для доступа к документации API",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    from app.routers.auth import decode_access_token
-
     try:
-        payload = decode_access_token(credentials.credentials)
+        payload = decode_access_token(token)
         if payload.get("role") not in ("viewer", "editor"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -312,13 +333,17 @@ async def require_docs_auth(
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    # Заголовкам прокси верим только при явном FAMILY_TREE_TRUST_PROXY=true.
+    # Иначе подмена X-Forwarded-For давала «новый IP» на каждый запрос
+    # и обходила rate limit и brute-force lockout.
+    if settings.trust_proxy:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
 
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
 
     if request.client and request.client.host:
         return request.client.host
@@ -350,16 +375,21 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             return response
 
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["X-Content-Type-Options"] = "nosniff"
+        # X-XSS-Protection удалён: устаревший (браузеры игнорируют/отключён),
+        # а включённый мог включать XSS-аудитор в старых Chrome. CSP закрывает вопрос.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
+            # 'unsafe-inline' в script-src — компромисс SPA без сборки; при переходе
+            # на сборку/nonce убрать. style-src inline нужен для инлайн-стилей узлов.
             "script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "font-src 'self'; "
             "connect-src 'self'; "
-            "frame-ancestors 'none';"
+            "frame-ancestors 'none'; "
+            "object-src 'none'; "
+            "base-uri 'self';"
         )
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"

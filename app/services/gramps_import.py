@@ -15,6 +15,7 @@ import io
 import re
 import shutil
 import tarfile
+import zlib
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -27,6 +28,42 @@ from app.config import settings
 from app.models import Gender, Media, Person, RelationType, Relationship
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".tif", ".tiff", ".bmp"}
+
+# Лимит на распакованный gzip-поток: иначе малый входной файл
+# (zip-bomb) раздувался в память без ограничения.
+MAX_DECOMPRESSED_SIZE = 256 * 1024 * 1024  # 256 МБ
+_CHUNK = 1024 * 1024
+
+
+def _gzip_decompress_limited(data: bytes) -> bytes:
+    """gzip.decompress с лимитом объёма на выходе (анти zip-bomb)."""
+    zobj = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    out = bytearray()
+    buf: bytes = data
+    while buf:
+        piece = zobj.decompress(buf, _CHUNK)
+        out += piece
+        if len(out) > MAX_DECOMPRESSED_SIZE:
+            raise ValueError(
+                f"Распакованный размер превышает лимит {MAX_DECOMPRESSED_SIZE // 1024 // 1024} МБ"
+            )
+        buf = zobj.unconsumed_tail
+        if not buf and piece:
+            break
+    out += zobj.flush()
+    if len(out) > MAX_DECOMPRESSED_SIZE:
+        raise ValueError(
+            f"Распакованный размер превышает лимит {MAX_DECOMPRESSED_SIZE // 1024 // 1024} МБ"
+        )
+    return bytes(out)
+
+
+def _gzip_try_decompress(data: bytes) -> bytes:
+    """Распаковать gzip с лимитом; если не gzip — вернуть как есть."""
+    try:
+        return _gzip_decompress_limited(data)
+    except (OSError, zlib.error):
+        return data
 
 
 @dataclass
@@ -146,7 +183,7 @@ def _extract_from_tar(tar_bytes: bytes) -> PackageContents:
             if base.endswith(".gramps") or base == "data.gramps" or base.endswith(".xml"):
                 blob = content
                 if _looks_like_gzip(blob):
-                    blob = gzip.decompress(blob)
+                    blob = _gzip_decompress_limited(blob)
                 if _looks_like_xml(blob):
                     xml_candidate = blob
                 continue
@@ -165,10 +202,7 @@ def extract_package(data: bytes, filename: str = "") -> PackageContents:
     name = filename.lower()
 
     if name.endswith(".gpkg") or _looks_like_gzip(data):
-        try:
-            decompressed = gzip.decompress(data)
-        except OSError:
-            decompressed = data
+        decompressed = _gzip_try_decompress(data)
 
         if _looks_like_tar(decompressed):
             return _extract_from_tar(decompressed)
@@ -176,12 +210,9 @@ def extract_package(data: bytes, filename: str = "") -> PackageContents:
         if _looks_like_xml(decompressed):
             return PackageContents(xml_bytes=decompressed)
 
-        try:
-            inner = gzip.decompress(decompressed)
-            if _looks_like_xml(inner):
-                return PackageContents(xml_bytes=inner)
-        except OSError:
-            pass
+        inner = _gzip_try_decompress(decompressed)
+        if _looks_like_xml(inner):
+            return PackageContents(xml_bytes=inner)
         data = decompressed
 
     if _looks_like_xml(data):

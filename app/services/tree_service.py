@@ -34,6 +34,7 @@ class TreeService:
         person = Person(**data.model_dump())
         self.db.add(person)
         self.db.commit()
+        self._invalidate_graph_cache()
         self.db.refresh(person)
         return person
 
@@ -69,6 +70,9 @@ class TreeService:
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(person, field, value)
         if person.birth_date and person.death_date and person.death_date < person.birth_date:
+            # явно откатываем незакоммиченные изменения до raise
+            self.db.rollback()
+            self.db.refresh(person)
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 "Дата смерти не может быть раньше даты рождения",
@@ -78,9 +82,20 @@ class TreeService:
         return person
 
     def delete_person(self, person_id: int) -> None:
+        from app.models import Media
+        from app.security import unlink_media_file
+
         person = self.get_person(person_id)
+        media_paths = list(
+            self.db.scalars(select(Media.file_path).where(Media.person_id == person_id)).all()
+        )
+        if person.photo_path and person.photo_path not in media_paths:
+            media_paths.append(person.photo_path)
         self.db.delete(person)
         self.db.commit()
+        self._invalidate_graph_cache()
+        for path in media_paths:
+            unlink_media_file(path)
 
     # ── Relationships ────────────────────────────────────────────────────
 
@@ -136,6 +151,7 @@ class TreeService:
         )
         self.db.add(rel)
         self.db.commit()
+        self._invalidate_graph_cache()
         self.db.refresh(rel)
         return rel
 
@@ -157,8 +173,45 @@ class TreeService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Связь id={relationship_id} не найдена")
         self.db.delete(rel)
         self.db.commit()
+        self._invalidate_graph_cache()
 
     # ── Graph helpers ────────────────────────────────────────────────────
+    #
+    # Раньше _parents_of/_children_of/_spouses_of делали SQL-запрос на каждого
+    # человека (N+1: get_ancestors/get_descendants/build_tree — O(людей) запросов).
+    # Теперь все PARENT_OF/SPOUSE_OF-связи грузятся одним запросом и строятся
+    # индексы в памяти; кеш живёт в пределах инстанса сервиса (один HTTP-запрос).
+
+    def _ensure_graph_cache(self) -> None:
+        if getattr(self, "_graph_loaded", False):
+            return
+        parents: dict[int, list[int]] = {}
+        children: dict[int, list[int]] = {}
+        spouses: dict[int, set[int]] = {}
+        for rel in self.db.scalars(
+            select(Relationship).where(
+                Relationship.relation_type.in_([RelationType.PARENT_OF, RelationType.SPOUSE_OF])
+            )
+        ).all():
+            if rel.relation_type == RelationType.PARENT_OF:
+                parents.setdefault(rel.related_person_id, []).append(rel.person_id)
+                children.setdefault(rel.person_id, []).append(rel.related_person_id)
+            else:
+                spouses.setdefault(rel.person_id, set()).add(rel.related_person_id)
+                spouses.setdefault(rel.related_person_id, set()).add(rel.person_id)
+        self._parents_map = parents
+        self._children_map = children
+        self._spouse_map = spouses
+        self._persons_by_id: dict[int, Person] = {
+            p.id: p for p in self.db.scalars(select(Person)).all()
+        }
+        self._graph_loaded = True
+
+    def _invalidate_graph_cache(self) -> None:
+        self._graph_loaded = False
+
+    def _lookup(self, ids: list[int] | set[int]) -> list[Person]:
+        return [p for pid in ids if (p := self._persons_by_id.get(pid)) is not None]
 
     def _all_parent_links(self) -> list[Relationship]:
         return list(
@@ -168,69 +221,24 @@ class TreeService:
         )
 
     def _parents_of(self, person_id: int) -> list[Person]:
-        ids = self.db.scalars(
-            select(Relationship.person_id).where(
-                Relationship.related_person_id == person_id,
-                Relationship.relation_type == RelationType.PARENT_OF,
-            )
-        ).all()
-        if not ids:
-            return []
-        return list(self.db.scalars(select(Person).where(Person.id.in_(ids))).all())
+        self._ensure_graph_cache()
+        return self._lookup(self._parents_map.get(person_id, ()))
 
     def _children_of(self, person_id: int) -> list[Person]:
-        ids = self.db.scalars(
-            select(Relationship.related_person_id).where(
-                Relationship.person_id == person_id,
-                Relationship.relation_type == RelationType.PARENT_OF,
-            )
-        ).all()
-        if not ids:
-            return []
-        return list(self.db.scalars(select(Person).where(Person.id.in_(ids))).all())
+        self._ensure_graph_cache()
+        return self._lookup(self._children_map.get(person_id, ()))
 
     def _spouses_of(self, person_id: int) -> list[Person]:
-        rows = self.db.scalars(
-            select(Relationship).where(
-                Relationship.relation_type == RelationType.SPOUSE_OF,
-                or_(
-                    Relationship.person_id == person_id,
-                    Relationship.related_person_id == person_id,
-                ),
-            )
-        ).all()
-        spouse_ids = [
-            r.related_person_id if r.person_id == person_id else r.person_id for r in rows
-        ]
-        if not spouse_ids:
-            return []
-        return list(self.db.scalars(select(Person).where(Person.id.in_(spouse_ids))).all())
+        self._ensure_graph_cache()
+        return self._lookup(self._spouse_map.get(person_id, ()))
 
     def _siblings_of(self, person_id: int) -> list[Person]:
-        parent_ids = [
-            r.person_id
-            for r in self.db.scalars(
-                select(Relationship).where(
-                    Relationship.related_person_id == person_id,
-                    Relationship.relation_type == RelationType.PARENT_OF,
-                )
-            ).all()
-        ]
-        if not parent_ids:
-            return []
+        self._ensure_graph_cache()
         sibling_ids: set[int] = set()
-        for pid in parent_ids:
-            kids = self.db.scalars(
-                select(Relationship.related_person_id).where(
-                    Relationship.person_id == pid,
-                    Relationship.relation_type == RelationType.PARENT_OF,
-                )
-            ).all()
-            sibling_ids.update(kids)
+        for pid in self._parents_map.get(person_id, ()):
+            sibling_ids.update(self._children_map.get(pid, ()))
         sibling_ids.discard(person_id)
-        if not sibling_ids:
-            return []
-        return list(self.db.scalars(select(Person).where(Person.id.in_(sibling_ids))).all())
+        return self._lookup(sibling_ids)
 
     def _would_create_ancestor_cycle(self, parent_id: int, child_id: int) -> bool:
         """True, если parent_id уже является потомком child_id."""

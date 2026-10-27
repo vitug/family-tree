@@ -27,6 +27,11 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     """Регистрирует пользовательские функции для кириллицы при каждом connect."""
     if not settings.database_url.startswith("sqlite"):
         return
+    # WAL: параллельные чтения не блокируются писателями
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
     # Имена в нижнем регистре — так их вызывает SQLAlchemy func.cyrillic_lower
     dbapi_connection.create_function("cyrillic_lower", 1, cyrillic_lower)
     dbapi_connection.create_function("cyrillic_upper", 1, cyrillic_upper)

@@ -1,5 +1,4 @@
 import logging
-import secrets
 import sys
 from pathlib import Path
 
@@ -25,14 +24,21 @@ class Settings(BaseSettings):
     media_dir: str = str(PROJECT_ROOT / "media")
     obsidian_export_dir: str = str(PROJECT_ROOT / "export" / "obsidian")
 
-    # JWT настройки
-    jwt_secret_key: str = secrets.token_urlsafe(32)  # Генерируется автоматически, но лучше задать через env
+    # JWT-секрет задаётся ТОЛЬКО через .env (FAMILY_TREE_JWT_SECRET_KEY).
+    # Пустой дефолт + обязательная валидация при старте: раньше случайный
+    # секрет на каждом рестарте молча инвалидировал все JWT/cookie.
+    jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_hours: int = 24
 
     # Токены авторизации для разных уровней доступа
     view_token: str = "family-view-token-dev"  # Для чтения данных (viewer роль)
     edit_token: str = "secret-edit-token-dev"  # Для чтения и записи (editor роль)
+
+    # Доверять X-Forwarded-For / X-Real-IP только за явным opt-in
+    # (когда сервис реально стоит за reverse-proxy). Иначе клиент может
+    # подменять заголовки и обходить rate limit / brute-force lockout.
+    trust_proxy: bool = False
 
     # Безопасность
     enable_rate_limiting: bool = True  # Включить rate limiting
@@ -46,6 +52,11 @@ class Settings(BaseSettings):
     @field_validator("jwt_secret_key")
     @classmethod
     def jwt_secret_key_must_be_strong(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError(
+                "JWT_SECRET_KEY не задан. Укажите FAMILY_TREE_JWT_SECRET_KEY в .env "
+                "(минимум 32 символа, например вывод: python -c \"import secrets; print(secrets.token_urlsafe(32))\")"
+            )
         if len(v) < 32:
             raise ValueError("JWT_SECRET_KEY должен быть не менее 32 символов")
         return v

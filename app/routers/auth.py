@@ -2,9 +2,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 import logging
 
@@ -15,13 +16,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-security = HTTPBearer()
+# HttpOnly cookie — JS не читает токен; <img> same-origin отправляет cookie автоматически
+AUTH_COOKIE_NAME = "ft_access_token"
+security_optional = HTTPBearer(auto_error=False)
+
 
 # ── Pydantic модели ──────────────────────────────────────────────────────
 
 class TokenRequest(BaseModel):
     """Запрос на токен с view token или edit token."""
     token: str
+
 
 class TokenResponse(BaseModel):
     """Ответ с JWT токеном."""
@@ -30,9 +35,56 @@ class TokenResponse(BaseModel):
     expires_in: int  # секунды до истечения
     role: str  # "viewer" или "editor"
 
+
 class TokenRefreshRequest(BaseModel):
-    """Запрос на обновление токена."""
-    token: str
+    """Опциональный body для API-клиентов; SPA обновляет сессию по cookie."""
+    token: Optional[str] = None
+
+
+# ── Cookie helpers ─────────────────────────────────────────────────────────
+
+def _cookie_secure(request: Request) -> bool:
+    """Secure только по HTTPS (localhost HTTP без Secure)."""
+    if request.url.scheme == "https":
+        return True
+    forwarded = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    return forwarded == "https"
+
+
+def set_auth_cookie(response: Response, request: Request, token: str, max_age: int) -> None:
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        max_age=max_age,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(request),
+    )
+
+
+def clear_auth_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(
+        key=AUTH_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(request),
+    )
+
+
+def extract_access_token(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = None,
+) -> Optional[str]:
+    """JWT из Authorization: Bearer или httpOnly cookie (не из query)."""
+    if credentials and credentials.credentials:
+        return credentials.credentials.strip()
+    cookie = request.cookies.get(AUTH_COOKIE_NAME)
+    if cookie:
+        return cookie.strip()
+    return None
+
 
 # ── JWT функции ───────────────────────────────────────────────────────────
 
@@ -43,21 +95,20 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_access_token_expire_hours)
-    
+
     to_encode.update({
         "exp": expire,
         "iat": datetime.now(timezone.utc),
-        "type": "access"
+        "type": "access",
     })
-    
-    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-    return encoded_jwt
+
+    return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
 
 def decode_access_token(token: str) -> dict:
     """Декодировать и валидировать JWT токен."""
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-        return payload
+        return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -71,44 +122,52 @@ def decode_access_token(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-# ── Dependencies ───────────────────────────────────────────────────────────
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> dict:
-    """Получить текущего пользователя из JWT токена."""
-    token = credentials.credentials
-    payload = decode_access_token(token)
-    
-    # Проверка типа токена
+def _payload_as_user(payload: dict) -> dict:
     if payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный тип токена",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Проверка роли
     role = payload.get("role")
-    if role not in ["viewer", "editor"]:
+    if role not in ("viewer", "editor"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверная роль пользователя",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
     return payload
 
-async def require_jwt_token(
-    current_user: dict = Depends(get_current_user)
+
+# ── Dependencies ───────────────────────────────────────────────────────────
+
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
 ) -> dict:
-    """Требовать валидный JWT токен для доступа (минимальная роль: viewer)."""
+    """Текущий пользователь из Bearer или httpOnly cookie."""
+    token = extract_access_token(request, credentials)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Требуется авторизация",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return _payload_as_user(decode_access_token(token))
+
+
+async def require_jwt_token(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Требовать валидный JWT (минимальная роль: viewer)."""
     return current_user
 
+
 async def require_editor_token(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Требовать валидный JWT токен с ролью editor для доступа."""
+    """Требовать роль editor."""
     if current_user.get("role") != "editor":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -116,70 +175,21 @@ async def require_editor_token(
         )
     return current_user
 
-# ── Legacy для обратной совместимости ───────────────────────────────────────
 
-logger.info("Auth router initialized with JWT support")
+logger.info("Auth router initialized with JWT + httpOnly cookie support")
 
-def require_edit_token(request: Request) -> None:
-    """Проверить, что токен редактирования совпадает с конфигом.
-    
-    ⚠️ Legacy функция! Рекомендуется использовать require_jwt_token.
-    Токен передаётся в заголовке X-Edit-Token.
-    """
-    token = (request.headers.get("X-Edit-Token") or "").strip()
-    logger.debug(
-        "Checking edit token from headers: %s; has_edit_token=%s",
-        "HIDDEN" if not token else token[:4] + "...",
-        settings.edit_token[:4] + "...",
-    )
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Требуется токен редактирования (X-Edit-Token)"
-        )
-    if not tokens_equal(token, settings.edit_token):
-        logger.warning(
-            "Edit token invalid: %s != %s", token[:4] + "...", settings.edit_token[:4] + "..."
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="Неверный токен редактирования"
-        )
-    logger.debug("Edit token accepted")
-
-@router.post("/verify-edit-token")
-async def verify_edit_token(request: Request) -> dict[str, bool]:
-    """Проверить токен редактирования, отправленный в заголовке X-Edit-Token.
-    
-    ⚠️ Legacy эндпоинт! Рекомендуется использовать /token.
-    """
-    logger.info("verify-edit-token called")
-    token = (request.headers.get("X-Edit-Token", "") or "").strip()
-    valid = tokens_equal(token, settings.edit_token)
-    logger.debug("Token validation result: %s (token provided: %s)", valid, bool(token))
-    if not valid and token:
-        # token provided but wrong
-        logger.warning("Invalid edit token provided")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="Неверный токен редактирования"
-        )
-    return {"valid": valid}
 
 # ── JWT эндпоинты ─────────────────────────────────────────────────────────
 
 @router.post("/token", response_model=TokenResponse, dependencies=[Depends(rate_limit_auth)])
-async def login_with_token(request: Request, request_data: TokenRequest) -> TokenResponse:
-    """Получить JWT токен в обмен на view token или edit token.
-
-    - view token → роль "viewer" (только чтение)
-    - edit token → роль "editor" (чтение и запись)
-
-    Защищено: rate limiting + brute-force lockout.
-    """
+async def login_with_token(
+    request: Request,
+    response: Response,
+    request_data: TokenRequest,
+) -> TokenResponse:
+    """Обмен view/edit token на JWT. Токен также пишется в httpOnly cookie."""
     logger.info("Login attempt from %s", request.client.host if request.client else "unknown")
 
-    # Только проверка блокировки (без записи попытки)
     await ensure_not_locked(request)
 
     clean_user_token = request_data.token.strip()
@@ -203,6 +213,7 @@ async def login_with_token(request: Request, request_data: TokenRequest) -> Toke
 
     access_token = create_access_token(data={"sub": "user", "role": role})
     expires_in = settings.jwt_access_token_expire_hours * 3600
+    set_auth_cookie(response, request, access_token, expires_in)
 
     return TokenResponse(
         access_token=access_token,
@@ -211,52 +222,109 @@ async def login_with_token(request: Request, request_data: TokenRequest) -> Toke
         role=role,
     )
 
+
+@router.get("/link/{access_token}", dependencies=[Depends(rate_limit_auth)])
+async def login_by_link(
+    request: Request,
+    access_token: str,
+) -> RedirectResponse:
+    """
+    Вход по ссылке-ключу: /auth/link/<view|edit token>.
+
+    Деплой раздаёт два длинных адреса (read-only и edit) — токен входит
+    в состав URL, вводить его не нужно. Валидный токен обменивается на
+    JWT в httpOnly cookie и редиректит на главную. Сам токен в ссылках
+    должен быть длинным случайным (см. scripts/generate_access_links.py).
+    """
+    await ensure_not_locked(request)
+
+    clean = access_token.strip()
+    if tokens_equal(clean, settings.view_token):
+        role = "viewer"
+        logger.info("Magic-link login successful (view token)")
+    elif tokens_equal(clean, settings.edit_token):
+        role = "editor"
+        logger.info("Magic-link login successful (edit token)")
+    else:
+        logger.warning("Invalid magic-link token (len=%d)", len(clean))
+        await record_login_result(request, success=False)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверная ссылка доступа",
+        )
+
+    await record_login_result(request, success=True)
+
+    access_token_jwt = create_access_token(data={"sub": "user", "role": role})
+    expires_in = settings.jwt_access_token_expire_hours * 3600
+    redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    set_auth_cookie(redirect, request, access_token_jwt, expires_in)
+    return redirect
+
+
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(request_data: TokenRefreshRequest) -> TokenResponse:
-    """Обновить JWT токен (удлинить истечение) с сохранением роли."""
+async def refresh_token(request: Request, response: Response) -> TokenResponse:
+    """Обновить JWT (cookie или JSON {token} для API-клиентов)."""
+    raw = extract_access_token(request)
+    if not raw:
+        try:
+            body = await request.json()
+            if isinstance(body, dict) and body.get("token"):
+                raw = str(body["token"]).strip()
+        except Exception:
+            raw = None
+
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Нет токена для обновления",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
-        # Проверяем старый токен
-        payload = decode_access_token(request_data.token)
-        
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Неверный тип токена"
-            )
-        
+        payload = decode_access_token(raw)
+        payload = _payload_as_user(payload)
         role = payload.get("role")
-        logger.info(f"Token refresh for user with role: {role}")
-        
-        # Создаем новый токен с той же ролью
+        logger.info("Token refresh for role: %s", role)
+
         access_token = create_access_token(data={"sub": "user", "role": role})
         expires_in = settings.jwt_access_token_expire_hours * 3600
-        
+        set_auth_cookie(response, request, access_token, expires_in)
+
         return TokenResponse(
             access_token=access_token,
             token_type="bearer",
             expires_in=expires_in,
-            role=role
+            role=role,
         )
-        
     except HTTPException:
-        # Пробрасываем дальше
+        clear_auth_cookie(response, request)
         raise
     except Exception as e:
-        logger.error(f"Error refreshing token: {e}")
+        logger.error("Error refreshing token: %s", e)
+        clear_auth_cookie(response, request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не удалось обновить токен"
+            detail="Не удалось обновить токен",
         )
+
+
+@router.post("/logout")
+async def logout(request: Request, response: Response) -> dict[str, bool]:
+    """Сбросить httpOnly cookie сессии."""
+    clear_auth_cookie(response, request)
+    return {"ok": True}
+
 
 @router.get("/me")
 async def get_current_user_info(
-    current_user: dict = Depends(require_jwt_token)
+    current_user: dict = Depends(require_jwt_token),
 ) -> dict:
-    """Получить информацию о текущем пользователе."""
+    """Информация о текущей сессии (для восстановления UI после reload)."""
     return {
         "user": "user",
         "role": current_user.get("role"),
         "permissions": "read_write" if current_user.get("role") == "editor" else "read_only",
         "exp": current_user.get("exp"),
-        "iat": current_user.get("iat")
+        "iat": current_user.get("iat"),
     }
