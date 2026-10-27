@@ -4,128 +4,144 @@
 
 const API = "/api/v1";
 
-// ── JWT token handling ─────────────────────────────────────
+// ── Session (JWT в httpOnly cookie, JS хранит только role/expiry) ─────────
 
-// Менеджер JWT токенов
 const jwtManager = {
-  accessToken: null,
   tokenExpiry: null,
-  userRole: null, // "viewer" or "editor"
+  userRole: null, // "viewer" | "editor"
+  _refreshTimer: null,
 
-  // Инициализация из localStorage
-  init() {
-    const savedToken = localStorage.getItem("jwtAccessToken");
-    const savedExpiry = localStorage.getItem("jwtTokenExpiry");
-    const savedRole = localStorage.getItem("jwtUserRole");
-    if (savedToken && savedExpiry) {
-      this.accessToken = savedToken;
-      this.tokenExpiry = parseInt(savedExpiry, 10);
-      this.userRole = savedRole;
+  /** Убрать старые небезопасные ключи localStorage (миграция). */
+  _purgeLegacyStorage() {
+    try {
+      localStorage.removeItem("jwtAccessToken");
+      localStorage.removeItem("jwtTokenExpiry");
+      localStorage.removeItem("jwtUserRole");
+    } catch {
+      /* ignore */
     }
   },
 
-  // Сохранение токана
-  saveToken(token, expiresIn, role) {
-    this.accessToken = token;
-    this.userRole = role;
-    state.userRole = role;
-    const now = Date.now();
-    this.tokenExpiry = now + (expiresIn * 1000); // expiresIn в секундах
-    
-    localStorage.setItem("jwtAccessToken", token);
-    localStorage.setItem("jwtTokenExpiry", this.tokenExpiry.toString());
-    localStorage.setItem("jwtUserRole", role);
-    
-    // Запланировать обновление за 5 минут до истечения
-    const refreshIn = Math.max((expiresIn - 300) * 1000, 0);
-    setTimeout(() => this.refreshTokenIfNeeded(), refreshIn);
-  },
-
-  // Проверка валидности токена
-  isTokenValid() {
-    if (!this.accessToken || !this.tokenExpiry) return false;
-    return Date.now() < this.tokenExpiry;
-  },
-
-  // Очистка токена
-  clearToken() {
-    this.accessToken = null;
-    this.tokenExpiry = null;
-    this.userRole = null;
-    state.userRole = null;
-    localStorage.removeItem("jwtAccessToken");
-    localStorage.removeItem("jwtTokenExpiry");
-    localStorage.removeItem("jwtUserRole");
-  },
-
-  // Получение токена авторизации для заголовков
-  getAuthHeader() {
-    if (!this.isTokenValid()) return null;
-    return `Bearer ${this.accessToken}`;
-  },
-
-  // URL медиа с access_token (для <img>, которые не шлют Authorization)
-  mediaUrl(url) {
-    if (!url) return url;
-    if (!this.isTokenValid()) return url;
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}access_token=${encodeURIComponent(this.accessToken)}`;
-  },
-
-
-  // Вход с использованием токена (view token или edit token)
-  async loginWithToken(token) {
+  /**
+   * Восстановить сессию по cookie через /auth/me.
+   * Токен в JS не хранится — только httpOnly cookie.
+   */
+  async init() {
+    this._purgeLegacyStorage();
     try {
-      const response = await api("/auth/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.trim() }),
-      });
-      
-      this.saveToken(response.access_token, response.expires_in, response.role);
-      const roleText = response.role === "editor" ? "редактирование" : "просмотр";
-      toastJWT(`✓ Авторизация успешна (${roleText})`, "success");
-      return true;
-    } catch (e) {
-      // toastJWT("Неверный токен авторизации", "error");
-      // Возвращаем false без дополнительных визуальных эффектов
+      const res = await fetch(`${API}/auth/me`, { credentials: "include" });
+      if (!res.ok) {
+        this.clearSession(false);
+        return false;
+      }
+      const data = await res.json();
+      this.userRole = data.role || null;
+      // exp — unix seconds из JWT
+      this.tokenExpiry = data.exp ? data.exp * 1000 : null;
+      if (typeof state !== "undefined") {
+        state.userRole = this.userRole;
+        state.isAuthenticated = this.isTokenValid();
+      }
+      this._scheduleRefresh();
+      return this.isTokenValid();
+    } catch {
+      this.clearSession(false);
       return false;
     }
   },
 
-  // Обновление токена
+  /** Сохранить метаданные сессии после login/refresh (токен только в cookie). */
+  saveSession(expiresIn, role) {
+    this.userRole = role;
+    if (typeof state !== "undefined") state.userRole = role;
+    this.tokenExpiry = Date.now() + expiresIn * 1000;
+    this._scheduleRefresh();
+  },
+
+  isTokenValid() {
+    if (!this.userRole || !this.tokenExpiry) return false;
+    return Date.now() < this.tokenExpiry;
+  },
+
+  clearSession(callLogout = true) {
+    this.tokenExpiry = null;
+    this.userRole = null;
+    if (typeof state !== "undefined") state.userRole = null;
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+    this._purgeLegacyStorage();
+    if (callLogout) {
+      fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" }).catch(() => {});
+    }
+  },
+
+  /** @deprecated clearToken — алиас clearSession */
+  clearToken() {
+    this.clearSession(true);
+  },
+
+  /** Медиа URL без токена в query — cookie уходит same-origin автоматически. */
+  mediaUrl(url) {
+    return url || "";
+  },
+
+  _scheduleRefresh() {
+    if (this._refreshTimer) clearTimeout(this._refreshTimer);
+    if (!this.tokenExpiry) return;
+    const msLeft = this.tokenExpiry - Date.now();
+    const refreshIn = Math.max(msLeft - 5 * 60 * 1000, 10_000);
+    this._refreshTimer = setTimeout(() => this.refreshTokenIfNeeded(), refreshIn);
+  },
+
+  async loginWithToken(token) {
+    try {
+      // Сырой fetch: не через api() — иначе 401 откроет модалку повторно
+      const res = await fetch(`${API}/auth/token`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token.trim() }),
+      });
+      if (!res.ok) return false;
+      const response = await res.json();
+      this.saveSession(response.expires_in, response.role);
+      const roleText = response.role === "editor" ? "редактирование" : "просмотр";
+      toastJWT(`✓ Авторизация успешна (${roleText})`, "success");
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
   async refreshToken() {
     try {
-      const response = await api("/auth/refresh", {
+      const res = await fetch(`${API}/auth/refresh`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: this.accessToken }),
+        body: "{}",
       });
-      
-      this.saveToken(response.access_token, response.expires_in, response.role);
-      toastJWT("Токен обновлён", "success");
+      if (!res.ok) throw new Error("refresh failed");
+      const response = await res.json();
+      this.saveSession(response.expires_in, response.role);
       return true;
     } catch (e) {
       console.error("Ошибка обновления токена:", e);
-      // Токен истёк или недействителен
-      this.clearToken();
+      this.clearSession(false);
       toastJWT("Сессия истекла. Войдите заново.", "error");
       return false;
     }
   },
 
-  // Проверка и обновление токена при необходимости
   async refreshTokenIfNeeded() {
-    if (!this.isTokenValid() || this.tokenExpiry - Date.now() < 300000) { // 5 минут
-      console.log("Обновление токена...");
+    if (!this.isTokenValid() || this.tokenExpiry - Date.now() < 300000) {
       return await this.refreshToken();
     }
     return true;
-  }
+  },
 };
-
-// Инициализация jwtManager при загрузке
-jwtManager.init();
 
 /** Открыть модалку входа; resolve(true/false) после попытки. */
 function openAuthModal({ preferEditor = false } = {}) {
@@ -181,10 +197,7 @@ function openAuthModal({ preferEditor = false } = {}) {
     };
     const onSubmit = async (e) => {
       e.preventDefault();
-      const role = levelEl.value;
-      const defaults = { viewer: "family", editor: "secret" };
-      let trimmed = tokenEl.value.trim();
-      if (!trimmed) trimmed = defaults[role] || "";
+      const trimmed = tokenEl.value.trim();
       if (!trimmed) {
         toast("Токен не может быть пустым", "error");
         return;
@@ -216,8 +229,8 @@ function updateAuthTokenHint() {
   if (!levelEl || !hintEl) return;
   hintEl.textContent =
     levelEl.value === "editor"
-      ? "По умолчанию для редактирования: secret"
-      : "По умолчанию для просмотра: family";
+      ? "Токен редактирования (edit token из .env)"
+      : "Токен просмотра (view token из .env)";
 }
 
 // Глобальный вход (кнопка в пустом списке и т.п.)
@@ -233,8 +246,8 @@ const state = {
   depthUp: 2,
   depthDown: 2,
   editingPersonId: null, // null = create, number = edit
-  isAuthenticated: jwtManager.isTokenValid(),
-  userRole: jwtManager.userRole, // "viewer" or "editor"
+  isAuthenticated: false,
+  userRole: null, // "viewer" or "editor"
   authRetryCount: 0, // Счетчик неудачных попыток авторизации
 };
 
@@ -311,51 +324,38 @@ function toggleHeaderMenu() {
 // ── API helpers ────────────────────────────────────────
 
 async function api(path, options = {}) {
-  const headers = options.headers || {};
+  const headers = { ...(options.headers || {}) };
   // Не устанавливать Content-Type для FormData — браузер сам multipart/form-data с boundary
   const body = options.body;
   if (!(body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
-  
-  // Добавляем JWT токен для всех запросов (теперь все требуют авторизацию)
-  const authHeader = jwtManager.getAuthHeader();
-  if (authHeader) {
-    headers["Authorization"] = authHeader;
-  }
-  
+
   const res = await fetch(`${API}${path}`, {
-    headers,
     ...options,
+    headers,
+    credentials: "include",
   });
   if (res.status === 204) return null;
-  
-  // Обработка 401 Unauthorized - попытка авторизации только если не было недавних неудач
+
+  // 401 — refresh по cookie, затем модалка входа
   if (res.status === 401) {
-    console.log("401 Unauthorized - требуется авторизация");
-    
-    // Если было много неудачных попыток, показываем только alert без авторизации
     if (state.authRetryCount > 0) {
-      console.log("Много неудачных попыток, не показываем диалог авторизации");
-      throw new Error("Требуется авторизация для доступа к данным. Перезагрузите страницу или нажмите кнопку входа.");
+      throw new Error(
+        "Требуется авторизация для доступа к данным. Перезагрузите страницу или нажмите кнопку входа."
+      );
     }
-    
-    state.authRetryCount++; // Увеличиваем счетчик неудач
-    
-    // Если есть токен, пробуем обновить
-    if (jwtManager.accessToken) {
-      console.log("Пробуем обновить токен...");
+
+    state.authRetryCount++;
+
+    if (jwtManager.isTokenValid() || jwtManager.userRole) {
       const refreshed = await jwtManager.refreshToken();
       if (refreshed) {
-        state.authRetryCount = 0; // Сбрасываем счетчик при успехе
-        // Повторяем запрос с новым токеном
-        const newAuthHeader = jwtManager.getAuthHeader();
-        if (newAuthHeader) {
-          headers["Authorization"] = newAuthHeader;
-        }
+        state.authRetryCount = 0;
         const retryRes = await fetch(`${API}${path}`, {
-          headers,
           ...options,
+          headers,
+          credentials: "include",
         });
         if (retryRes.status === 204) return null;
         const retryText = await retryRes.text();
@@ -374,28 +374,20 @@ async function api(path, options = {}) {
                 : `Ошибка ${retryRes.status}`;
           throw new Error(msg);
         }
-        state.authRetryCount = 0; // Сбрасываем счетчик при успешном повторе
+        state.authRetryCount = 0;
         return retryData;
       }
     }
-    
-    // Если токена нет или обновление не помогло - предлагаем авторизоваться
-    const authRequired = async () => {
-      // Используем новую функцию ensureJWToken() с выбором уровня доступа
-      const success = await ensureJWToken();
-      if (success) {
-        state.authRetryCount = 0; // Сбрасываем счетчик при успешной авторизации
-        state.isAuthenticated = true;
-        // Повторяем исходный запрос
-        return api(path, options);
-      } else {
-        throw new Error("Требуется авторизация для доступа к данным");
-      }
-    };
-    
-    return authRequired();
+
+    const success = await ensureJWToken();
+    if (success) {
+      state.authRetryCount = 0;
+      state.isAuthenticated = true;
+      return api(path, options);
+    }
+    throw new Error("Требуется авторизация для доступа к данным");
   }
-  
+
   const text = await res.text();
   let data = null;
   try {
@@ -412,10 +404,8 @@ async function api(path, options = {}) {
           : `Ошибка ${res.status}`;
     throw new Error(msg);
   }
-  
-  // Сбрасываем счетчик попыток при успешном запросе
+
   state.authRetryCount = 0;
-  
   return data;
 }
 
@@ -484,12 +474,6 @@ async function apiWithJWT(path, options = {}) {
   if (!(await ensureJWToken())) {
     throw new Error("Требуется авторизация для доступа к данным");
   }
-  
-  const headers = (options.headers = options.headers || {});
-  const authHeader = jwtManager.getAuthHeader();
-  if (authHeader) {
-    headers["Authorization"] = authHeader;
-  }
   return api(path, options);
 }
 
@@ -498,26 +482,16 @@ async function apiWithEditorAccess(path, options = {}) {
   if (!(await requireEditorAccess())) {
     throw new Error("Требуются права редактирования");
   }
-  
-  const headers = (options.headers = options.headers || {});
-  const authHeader = jwtManager.getAuthHeader();
-  if (authHeader) {
-    headers["Authorization"] = authHeader;
-  }
   return api(path, options);
 }
 
-// ── Functions for fetch with JWT token (FormData support without JSON parsing) ----------
+// ── Fetch с cookie-сессией (FormData / произвольный URL) ──────────────────
 async function fetchWithJWT(url, init = {}) {
   if (!(await ensureJWToken())) {
     throw new Error("Требуется авторизация для доступа к данным");
   }
-  init = init || {};
+  init = { ...init, credentials: "include" };
   const headers = new Headers(init.headers || {});
-  const authHeader = jwtManager.getAuthHeader();
-  if (authHeader) {
-    headers.set("Authorization", authHeader);
-  }
   init.headers = headers;
   const res = await fetch(url, init);
   if (res.status === 204) return null;
@@ -545,12 +519,8 @@ async function fetchWithEditorAccess(url, init = {}) {
   if (!(await requireEditorAccess())) {
     throw new Error("Требуются права редактирования");
   }
-  init = init || {};
+  init = { ...init, credentials: "include" };
   const headers = new Headers(init.headers || {});
-  const authHeader = jwtManager.getAuthHeader();
-  if (authHeader) {
-    headers.set("Authorization", authHeader);
-  }
   init.headers = headers;
   const res = await fetch(url, init);
   if (res.status === 204) return null;
@@ -1127,7 +1097,7 @@ async function onFindPath(e) {
 async function onExportObsidian() {
   if (!confirm("Экспортировать всех людей в Markdown для Obsidian?")) return;
   try {
-    const data = await apiWithJWT("/export/obsidian", { method: "POST" });
+    const data = await apiWithEditorAccess("/export/obsidian", { method: "POST" });
     toast(data.message || "Экспорт готов");
     if (data.warnings?.length) console.warn(data.warnings);
 
@@ -1136,7 +1106,7 @@ async function onExportObsidian() {
     );
     if (!wantZip) return;
 
-    const res = await fetch(`${API}/export/obsidian/zip`);
+    const res = await fetch(`${API}/export/obsidian/zip`, { credentials: "include" });
     if (!res.ok) {
       let msg = `Ошибка ${res.status}`;
       try {
@@ -1560,7 +1530,7 @@ function bindEvents() {
 
     if (isAuthenticated) {
       if (confirm("Выйти из системы?")) {
-        jwtManager.clearToken();
+        jwtManager.clearSession(true);
         updateAuthUI();
         toast("Вы вышли из системы", "success");
         state.people = [];
@@ -1588,8 +1558,13 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
-  
-  // Если токен есть, загружаем данные, иначе показываем запрос авторизации
+
+  // Восстановить сессию из httpOnly cookie
+  await jwtManager.init();
+  state.isAuthenticated = jwtManager.isTokenValid();
+  state.userRole = jwtManager.userRole;
+  if (typeof window.__updateAuthUI === "function") window.__updateAuthUI();
+
   if (jwtManager.isTokenValid()) {
     try {
       await loadPeople();

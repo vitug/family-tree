@@ -124,7 +124,7 @@ async def protected_media_file(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """JWT: Authorization Bearer или ?access_token=."""
+    """JWT: Authorization Bearer или httpOnly cookie."""
     from app.security import require_media_auth
 
     await require_media_auth(request)
