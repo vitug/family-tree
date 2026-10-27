@@ -148,3 +148,27 @@ class PathResponse(BaseModel):
     to_id: int
     path: list[FamilyMember]
     steps: list[str]
+
+
+class PersonRevisionRead(BaseModel):
+    """Ревизия из истории правок человека."""
+
+    id: int
+    person_id: int
+    person_name: str | None
+    action: str  # create | update | delete
+    changes: list[dict] | None  # [{field, old, new}]
+    created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_changes_json(cls, data):
+        # changes в БД — TEXT с JSON
+        if hasattr(data, "changes") and isinstance(data.changes, str):
+            import json as _json
+
+            try:
+                data.changes = _json.loads(data.changes)
+            except ValueError:
+                data.changes = None
+        return data

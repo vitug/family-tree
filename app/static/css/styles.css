@@ -1500,3 +1500,41 @@ body::before {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── История правок (detail panel) ─────────────────────────── */
+.detail-history {
+  margin-top: 0.75rem;
+  max-height: 260px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border, #333);
+  padding-top: 0.5rem;
+}
+.detail-history h4 {
+  margin: 0.25rem 0 0.5rem;
+}
+.history-item {
+  padding: 0.4rem 0;
+  border-bottom: 1px dashed var(--border, #333);
+  font-size: 0.85rem;
+}
+.history-item:last-child {
+  border-bottom: none;
+}
+.history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--text-muted, #888);
+  margin-bottom: 0.2rem;
+}
+.history-action {
+  font-weight: 600;
+}
+.history-action-create { color: #4caf50; }
+.history-action-update { color: #ffb74d; }
+.history-action-delete { color: #ef5350; }
+.history-change s { opacity: 0.6; }
+.history-empty {
+  color: var(--text-muted, #888);
+  font-size: 0.85rem;
+}

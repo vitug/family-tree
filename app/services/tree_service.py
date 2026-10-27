@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import deque
 
 from fastapi import HTTPException, status
@@ -7,7 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Person, RelationType, Relationship
+from app.models import Person, PersonRevision, RelationType, Relationship
 from app.schemas import (
     AncestorsResponse,
     DescendantsResponse,
@@ -22,6 +23,17 @@ from app.schemas import (
 )
 
 # cyrillic_lower регистрируется один раз в app.database при connect
+
+
+def _serialize(value):
+    """Значение поля в JSON-снимок для ревизии (даты, enum → строка)."""
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):  # date / datetime
+        return value.isoformat()
+    return str(value)
+
+
 class TreeService:
     """Сервис управления людьми, родственными связями и построением дерева."""
 
@@ -30,9 +42,27 @@ class TreeService:
 
     # ── Person CRUD ──────────────────────────────────────────────────────
 
+    def _record_revision(
+        self,
+        person: Person,
+        action: str,
+        changes: list[dict] | None = None,
+    ) -> None:
+        """Записать ревизию в person_revisions (в той же транзакции)."""
+        self.db.add(
+            PersonRevision(
+                person_id=person.id,
+                person_name=person.full_name[:400],
+                action=action,
+                changes=json.dumps(changes, ensure_ascii=False) if changes else None,
+            )
+        )
+
     def create_person(self, data: PersonCreate) -> Person:
         person = Person(**data.model_dump())
         self.db.add(person)
+        self.db.flush()  # нужен id до записи ревизии
+        self._record_revision(person, "create")
         self.db.commit()
         self._invalidate_graph_cache()
         self.db.refresh(person)
@@ -67,7 +97,11 @@ class TreeService:
 
     def update_person(self, person_id: int, data: PersonUpdate) -> Person:
         person = self.get_person(person_id)
+        changes: list[dict] = []
         for field, value in data.model_dump(exclude_unset=True).items():
+            old = getattr(person, field)
+            if old != value:
+                changes.append({"field": field, "old": _serialize(old), "new": _serialize(value)})
             setattr(person, field, value)
         if person.birth_date and person.death_date and person.death_date < person.birth_date:
             # явно откатываем незакоммиченные изменения до raise
@@ -77,6 +111,8 @@ class TreeService:
                 status.HTTP_400_BAD_REQUEST,
                 "Дата смерти не может быть раньше даты рождения",
             )
+        if changes:  # пустой PATCH (нет изменившихся полей) не шумит в истории
+            self._record_revision(person, "update", changes)
         self.db.commit()
         self.db.refresh(person)
         return person
@@ -92,10 +128,23 @@ class TreeService:
         if person.photo_path and person.photo_path not in media_paths:
             media_paths.append(person.photo_path)
         self.db.delete(person)
+        # ревизия delete — до commit, в той же транзакции (переживёт удаление)
+        self._record_revision(person, "delete")
         self.db.commit()
         self._invalidate_graph_cache()
         for path in media_paths:
             unlink_media_file(path)
+
+    def get_person_history(self, person_id: int, limit: int = 100) -> list[PersonRevision]:
+        """История правок человека (новые сверху). Человек может быть удалён."""
+        return list(
+            self.db.scalars(
+                select(PersonRevision)
+                .where(PersonRevision.person_id == person_id)
+                .order_by(PersonRevision.id.desc())
+                .limit(limit)
+            ).all()
+        )
 
     # ── Relationships ────────────────────────────────────────────────────
 

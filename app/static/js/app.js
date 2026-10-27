@@ -903,6 +903,82 @@ async function showDetail(id) {
 
   el.detail.dataset.personId = String(id);
   el.detail.classList.remove("hidden");
+
+  // ── История правок ──────────────────────────────────────────
+  loadPersonHistory(id).catch(() => {});
+}
+
+const HISTORY_FIELD_LABELS = {
+  first_name: "Имя",
+  last_name: "Фамилия",
+  middle_name: "Отчество",
+  maiden_name: "Девичья фамилия",
+  gender: "Пол",
+  birth_date: "Дата рождения",
+  death_date: "Дата смерти",
+  birth_place: "Место рождения",
+  notes: "Заметки",
+  photo_path: "Фото",
+};
+
+const HISTORY_ACTION_LABELS = {
+  create: "создан",
+  update: "изменён",
+  delete: "удалён",
+};
+
+function fmtHistoryValue(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  return String(v);
+}
+
+function fmtHistoryDate(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+}
+
+async function loadPersonHistory(id) {
+  let block = document.getElementById("detail-history");
+  if (!block) {
+    block = document.createElement("div");
+    block.id = "detail-history";
+    block.className = "detail-history";
+    el.detailRel.insertAdjacentElement("afterend", block);
+  }
+  const items = await api(`/persons/${id}/history?limit=50`);
+  if (!items.length) {
+    block.innerHTML =
+      '<h4>История правок</h4><p class="history-empty">Правок ещё не было</p>';
+    return;
+  }
+  const rows = items
+    .map((r) => {
+      const changes = (r.changes || [])
+        .map(
+          (c) =>
+            `<div class="history-change">${escapeHtml(
+              HISTORY_FIELD_LABELS[c.field] || c.field
+            )}: <s>${escapeHtml(fmtHistoryValue(c.old))}</s> → <b>${escapeHtml(
+              fmtHistoryValue(c.new)
+            )}</b></div>`
+        )
+        .join("");
+      return `<div class="history-item">
+        <div class="history-head">
+          <span class="history-action history-action-${escapeHtml(r.action)}">${escapeHtml(
+        HISTORY_ACTION_LABELS[r.action] || r.action
+      )}</span>
+          <time>${escapeHtml(fmtHistoryDate(r.created_at))}</time>
+        </div>
+        ${changes}
+      </div>`;
+    })
+    .join("");
+  block.innerHTML = `<h4>История правок</h4>${rows}`;
 }
 
 function genderLabel(g) {

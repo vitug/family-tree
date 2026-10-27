@@ -135,3 +135,23 @@ class Media(Base):
         """URL для защищённого эндпоинта /media/... (нужен JWT Bearer или cookie)."""
         rel = self.file_path.replace(chr(92), "/").lstrip("/")
         return f"/media/{rel}"
+
+
+class PersonRevision(Base):
+    """История правок человека: create / update / delete с diff полей.
+
+    Хранится отдельно от persons (без FK): ревизии переживают удаление
+    человека — в person_name остаётся снимок имени на момент правки.
+    """
+
+    __tablename__ = "person_revisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    person_name: Mapped[str | None] = mapped_column(String(400))
+    action: Mapped[str] = mapped_column(String(16))  # create | update | delete
+    # JSON-массив [{field, old, new}] — только реально изменившиеся поля
+    changes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

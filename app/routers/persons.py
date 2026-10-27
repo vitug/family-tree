@@ -4,7 +4,7 @@ import logging
 
 from app.routers.auth import require_jwt_token, require_editor_token
 from app.database import get_db
-from app.schemas import PersonCreate, PersonRead, PersonUpdate
+from app.schemas import PersonCreate, PersonRead, PersonRevisionRead, PersonUpdate
 from app.services.tree_service import TreeService
 
 router = APIRouter(prefix="/persons", tags=["persons"])
@@ -52,3 +52,17 @@ def update_person(
 def delete_person(person_id: int, service: TreeService = Depends(get_service)) -> None:
     logger.info("Delete person id=%d", person_id)
     service.delete_person(person_id)
+
+
+@router.get(
+    "/{person_id}/history",
+    response_model=list[PersonRevisionRead],
+    dependencies=[Depends(require_jwt_token)],
+)
+def person_history(
+    person_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    service: TreeService = Depends(get_service),
+) -> list[PersonRevisionRead]:
+    """История правок человека (create/update/delete с diff полей)."""
+    return service.get_person_history(person_id, limit=limit)

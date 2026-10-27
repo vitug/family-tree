@@ -323,3 +323,57 @@ def test_sqlite_wal_mode(app_env, tmp_path):
     conn = sqlite3.connect(str(tmp_path / "test_family.db"))
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     conn.close()
+
+
+# ── История правок (person_revisions) ───────────────────────────────────────
+
+
+def test_person_history_records_create_update_delete(editor_client):
+    r = editor_client.post(
+        "/api/v1/persons",
+        json={"first_name": "Пётр", "last_name": "Исторов", "gender": "male"},
+    )
+    pid = r.json()["id"]
+
+    h = editor_client.get(f"/api/v1/persons/{pid}/history").json()
+    assert len(h) == 1
+    assert h[0]["action"] == "create"
+    assert h[0]["person_name"] == "Исторов Пётр"
+
+    # правка двух полей — в истории ровно их diff
+    editor_client.patch(
+        f"/api/v1/persons/{pid}",
+        json={"birth_date": "1950-01-01", "birth_place": "Москва"},
+    )
+    h = editor_client.get(f"/api/v1/persons/{pid}/history").json()
+    assert h[0]["action"] == "update"
+    fields = {c["field"] for c in h[0]["changes"]}
+    assert fields == {"birth_date", "birth_place"}
+    by_field = {c["field"]: c for c in h[0]["changes"]}
+    assert by_field["birth_date"]["old"] is None
+    assert by_field["birth_date"]["new"] == "1950-01-01"
+
+    # no-op PATCH не создаёт ревизию
+    editor_client.patch(f"/api/v1/persons/{pid}", json={"birth_place": "Москва"})
+    assert len(editor_client.get(f"/api/v1/persons/{pid}/history").json()) == 2
+
+    # отклонённая правка (даты) не попадает в историю
+    editor_client.patch(
+        f"/api/v1/persons/{pid}", json={"death_date": "1940-01-01"}
+    )
+    assert len(editor_client.get(f"/api/v1/persons/{pid}/history").json()) == 2
+
+    # delete: ревизия переживает удаление человека
+    editor_client.delete(f"/api/v1/persons/{pid}")
+    h = editor_client.get(f"/api/v1/persons/{pid}/history").json()
+    assert h[0]["action"] == "delete"
+    assert h[0]["person_name"] == "Исторов Пётр"
+    assert len(h) == 3  # create + update + delete
+
+
+def test_person_history_viewer_can_read(viewer_client, editor_client):
+    pid = editor_client.post(
+        "/api/v1/persons", json={"first_name": "Аня", "gender": "female"}
+    ).json()["id"]
+    assert viewer_client.get(f"/api/v1/persons/{pid}/history").status_code == 200
+    assert viewer_client.get("/api/v1/persons/999999/history").json() == []
