@@ -32,6 +32,8 @@ def app_env(tmp_path, monkeypatch):
     monkeypatch.setenv("FAMILY_TREE_DATABASE_URL", f"sqlite:///{db_file.as_posix()}")
     monkeypatch.setenv("FAMILY_TREE_MEDIA_DIR", str(tmp_path / "media"))
     monkeypatch.setenv("FAMILY_TREE_OBSIDIAN_EXPORT_DIR", str(tmp_path / "export"))
+    # боевой .env (например ROOT_PATH двери nginx) не должен влиять на тесты
+    monkeypatch.setenv("FAMILY_TREE_ROOT_PATH", "")
 
     for mod in list(sys.modules):
         if mod.startswith("app"):
