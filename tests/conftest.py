@@ -34,6 +34,7 @@ def app_env(tmp_path, monkeypatch):
     monkeypatch.setenv("FAMILY_TREE_OBSIDIAN_EXPORT_DIR", str(tmp_path / "export"))
     # боевой .env (например ROOT_PATH двери nginx) не должен влиять на тесты
     monkeypatch.setenv("FAMILY_TREE_ROOT_PATH", "")
+    monkeypatch.setenv("FAMILY_TREE_TRUST_PROXY", "false")
 
     for mod in list(sys.modules):
         if mod.startswith("app"):
