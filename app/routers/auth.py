@@ -257,7 +257,9 @@ async def login_by_link(
 
     access_token_jwt = create_access_token(data={"sub": "user", "role": role})
     expires_in = settings.jwt_access_token_expire_hours * 3600
-    redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    # при деплое за префиксом редиректим в корень приложения, не домена
+    redirect_target = settings.root_path or "/"
+    redirect = RedirectResponse(url=redirect_target, status_code=status.HTTP_303_SEE_OTHER)
     set_auth_cookie(redirect, request, access_token_jwt, expires_in)
     return redirect
 

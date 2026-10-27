@@ -8,7 +8,7 @@ from typing import AsyncGenerator
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -150,6 +150,23 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 # /media НЕ монтируется как StaticFiles — только защищённые эндпоинты выше
 
 
+# ── SPA index с поддержкой префикса (деплой за reverse-proxy) ──────────────
+
+
+def _render_index() -> FileResponse:
+    """index.html: инжектит window.ROOT_PATH и чинит абсолютные /static-пути."""
+    root = settings.root_path
+    if not root:
+        return FileResponse(STATIC_DIR / "index.html")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    # абсолютные ссылки на статику → с префиксом
+    html = html.replace('"/static/', f'"{root}/static/')
+    # ROOT_PATH для app.js (API, media)
+    inject = f'<script>window.ROOT_PATH="{root}";</script>'
+    html = html.replace("</head>", f"{inject}</head>", 1)
+    return HTMLResponse(html)
+
+
 # ── Защита OpenAPI ─────────────────────────────────────────────────────────
 
 if settings.protect_api_docs:
@@ -159,14 +176,14 @@ if settings.protect_api_docs:
     @app.get("/redoc", include_in_schema=False)
     async def protected_docs(_auth: bool = Depends(require_docs_auth)):
         # При наличии JWT отдаём SPA; Swagger UI при protect_api_docs отключён в конструкторе
-        return FileResponse(STATIC_DIR / "index.html")
+        return _render_index()
 
 
 # ── Системные роуты ────────────────────────────────────────────────────────
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return _render_index()
 
 
 @app.get("/health")

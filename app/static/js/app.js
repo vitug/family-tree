@@ -2,7 +2,7 @@
  * UI для сервиса семейного дерева.
  */
 
-const API = "/api/v1";
+const API = (window.ROOT_PATH || "") + "/api/v1";
 
 // ── Session (JWT в httpOnly cookie, JS хранит только role/expiry) ─────────
 
@@ -82,9 +82,13 @@ const jwtManager = {
     this.clearSession(true);
   },
 
-  /** Медиа URL без токена в query — cookie уходит same-origin автоматически. */
+  /** Медиа URL без токена в query — cookie уходит same-origin автоматически.
+   *  window.ROOT_PATH подставляется при деплое за префиксом reverse-proxy. */
   mediaUrl(url) {
-    return url || "";
+    if (!url) return url;
+    const root = window.ROOT_PATH || "";
+    if (root && url.startsWith("/")) return root + url;
+    return url;
   },
 
   _scheduleRefresh() {

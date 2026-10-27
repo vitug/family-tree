@@ -49,6 +49,21 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Префикс пути при деплое за reverse-proxy (например /fTk9abcX на vitug.ru).
+    # Пустой = корень. Приложение само подставляет его в SPA и редиректы,
+    # nginx при этом проксирует БЕЗ URI-части (полный путь уходит целиком).
+    root_path: str = ""
+
+    @field_validator("root_path")
+    @classmethod
+    def root_path_must_be_slash_prefixed(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            return ""
+        if not v.startswith("/"):
+            v = "/" + v
+        return v.rstrip("/")
+
     @field_validator("jwt_secret_key")
     @classmethod
     def jwt_secret_key_must_be_strong(cls, v: str) -> str:
