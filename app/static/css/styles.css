@@ -1538,3 +1538,19 @@ body::before {
   color: var(--text-muted, #888);
   font-size: 0.85rem;
 }
+
+/* ── Галерея фото в панели деталей ──────────────────────────── */
+.photo-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.photo-thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  cursor: zoom-in;
+  border: 1px solid var(--border, #444);
+}

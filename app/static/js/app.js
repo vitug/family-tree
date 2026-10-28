@@ -881,6 +881,9 @@ async function showDetail(id) {
     photoBlock.classList.add("hidden");
   }
 
+  // ── все фото человека (галерея), кроме главного ───────────────
+  loadPersonPhotos(id, photoBlock).catch(() => {});
+
   const groups = [
     ["Родители", rel.parents],
     ["Супруги", rel.spouses],
@@ -1666,3 +1669,27 @@ async function init() {
 }
 
 init();
+async function loadPersonPhotos(personId, photoBlock) {
+  const items = await api(`/persons/${personId}/photos`);
+  const extra = items.filter((m) => !m.is_primary);
+  let gallery = photoBlock.querySelector(".photo-gallery");
+  if (!extra.length) {
+    if (gallery) gallery.remove();
+    return;
+  }
+  if (!gallery) {
+    gallery = document.createElement("div");
+    gallery.className = "photo-gallery";
+    photoBlock.appendChild(gallery);
+  }
+  gallery.innerHTML = extra
+    .map(
+      (m) =>
+        `<img class="photo-thumb" src="${escapeHtml(
+          jwtManager.mediaUrl(m.url)
+        )}" alt="${escapeHtml(m.description || "фото")}" loading="lazy" title="${escapeHtml(
+          m.description || ""
+        )}" />`
+    )
+    .join("");
+}
