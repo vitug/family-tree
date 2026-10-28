@@ -121,6 +121,8 @@ class PersonAccessLink(Base):
         ForeignKey("persons.id", ondelete="CASCADE"), nullable=False, index=True
     )
     is_active: Mapped[bool] = mapped_column(default=True)
+    # роль сессии по этой ссылке: editor (может править) или viewer
+    role: Mapped[str] = mapped_column(String(16), default="editor")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     person: Mapped["Person"] = relationship("Person")
@@ -166,6 +168,8 @@ class PersonRevision(Base):
     person_id: Mapped[int] = mapped_column(nullable=False, index=True)
     person_name: Mapped[str | None] = mapped_column(String(400))
     action: Mapped[str] = mapped_column(String(16))  # create | update | delete
+    # кто сделал правку: имя человека по персональной ссылке или «Редактор»
+    actor: Mapped[str | None] = mapped_column(String(400))
     # JSON-массив [{field, old, new}] — только реально изменившиеся поля
     changes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(

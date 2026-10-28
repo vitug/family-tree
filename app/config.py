@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # его карточку (id из persons; 0 = без привязки).
     view_focus_person_id: int = 0
 
+    # Имя автора правок для глобальной editor-ссылки (в истории правок).
+    editor_name: str = "Редактор"
+
     # Токены авторизации для разных уровней доступа
     view_token: str = "family-view-token-dev"  # Для чтения данных (viewer роль)
     edit_token: str = "secret-edit-token-dev"  # Для чтения и записи (editor роль)

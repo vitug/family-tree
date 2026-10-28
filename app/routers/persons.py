@@ -20,8 +20,12 @@ router = APIRouter(prefix="/persons", tags=["persons"])
 logger = logging.getLogger(__name__)
 
 
-def get_service(db: Session = Depends(get_db)) -> TreeService:
-    return TreeService(db)
+def get_service(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_jwt_token),
+) -> TreeService:
+    """Сервис с именем автора правок из текущей сессии (если есть)."""
+    return TreeService(db, actor=user.get("actor"))
 
 
 @router.get("", response_model=list[PersonRead], dependencies=[Depends(require_jwt_token)])

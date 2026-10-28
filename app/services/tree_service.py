@@ -37,10 +37,11 @@ def _serialize(value):
 class TreeService:
     """Сервис управления людьми, родственными связями и построением дерева."""
 
-    def __init__(self, db: Session) -> None:
-        self.db = db
-
     # ── Person CRUD ──────────────────────────────────────────────────────
+
+    def __init__(self, db, actor: str | None = None):
+        self.db = db
+        self.actor = (actor or None) and (actor[:400] if isinstance(actor, str) else actor)
 
     def _record_revision(
         self,
@@ -54,6 +55,7 @@ class TreeService:
                 person_id=person.id,
                 person_name=person.full_name[:400],
                 action=action,
+                actor=self.actor or None,
                 changes=json.dumps(changes, ensure_ascii=False) if changes else None,
             )
         )

@@ -1612,3 +1612,9 @@ body::before {
 .overview-card .avatar { width: 52px; height: 52px; font-size: 1.1rem; }
 .overview-name { font-weight: 600; font-size: 0.88rem; line-height: 1.25; }
 .overview-sub { font-size: 0.75rem; color: var(--text-muted, #888); }
+
+.history-actor {
+  color: var(--accent, #c88a4a);
+  font-size: 0.85em;
+  margin-left: 6px;
+}

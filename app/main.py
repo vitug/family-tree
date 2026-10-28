@@ -35,12 +35,32 @@ access_log = get_access_logger()
 logger = logging.getLogger(__name__)
 
 
+def _migrate_columns() -> None:
+    """Лёгкая миграция: добавить недостающие колонки в существующие таблицы."""
+    from sqlalchemy import text
+
+    from app.database import engine
+
+    cols = {
+        "person_revisions": {"actor": "TEXT"},
+        "person_access_links": {"role": "VARCHAR(16) DEFAULT 'editor' NOT NULL"},
+    }
+    with engine.begin() as conn:
+        for table, adds in cols.items():
+            existing = {r[1] for r in conn.execute(text(f"PRAGMA table_info({table})"))}
+            for col, ddl in adds.items():
+                if col not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+                    logger.info("Migrated: %s.%s added", table, col)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting Family Tree Service v%s", __version__)
     logger.info("Media directory: %s", MEDIA_DIR)
     logger.info("Edit token required: %s", bool(settings.edit_token))
     init_db()
+    _migrate_columns()
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
     (MEDIA_DIR / "files").mkdir(parents=True, exist_ok=True)
     logger.info("Database initialized")

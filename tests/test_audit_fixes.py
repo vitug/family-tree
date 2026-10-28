@@ -469,7 +469,7 @@ def test_person_access_links(editor_client, app_env):
         assert resp.status_code == 303
         assert f"person={pid}" in resp.headers["location"]
         me = c.get("/api/v1/auth/me")
-        assert me.status_code == 200 and me.json()["role"] == "viewer"
+        assert me.status_code == 200 and me.json()["role"] == "editor"
         assert me.json()["person_id"] == pid
 
     # список и отзыв
@@ -482,3 +482,18 @@ def test_person_access_links(editor_client, app_env):
     with TestClient(live_app, follow_redirects=False) as c:
         resp = c.get(f"/api/v1/auth/link/{token}")
         assert resp.status_code in (401, 403, 404)
+
+
+def test_revision_actor(editor_client, app_env):
+    """История правок запоминает автора: editor-ссылка → «Редактор»."""
+    r = editor_client.post(
+        "/api/v1/persons", json={"first_name": "Ав", "last_name": "Тор"}
+    )
+    assert r.status_code in (200, 201), r.text
+    pid = r.json()["id"]
+    r = editor_client.patch(f"/api/v1/persons/{pid}", json={"biography": "тест"})
+    assert r.status_code == 200, r.text
+    hist = editor_client.get(f"/api/v1/persons/{pid}/history").json()
+    assert hist, "история пуста"
+    actors = {h.get("actor") for h in hist}
+    assert "Редактор" in actors, actors

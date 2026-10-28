@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 import logging
+from types import SimpleNamespace
 
 from app.config import settings
 from app.security import rate_limit_auth, ensure_not_locked, record_login_result, tokens_equal
@@ -251,12 +252,31 @@ async def login_by_link(
                 PersonAccessLink.token == clean, PersonAccessLink.is_active
             )
         ).first()
+        # считываем всё нужное до закрытия сессии (link.person — lazy load)
+        if link is not None:
+            _link_person_id = link.person_id
+            _link_role = link.role
+            _link_actor = (link.person.full_name or "")[:400] if link.person else None
+        else:
+            _link_person_id = _link_role = _link_actor = None
     finally:
         db.close()
+    if _link_person_id is not None:
+        link = SimpleNamespace(
+            person_id=_link_person_id, role=_link_role, person=None
+        )
+        actor_name = _link_actor
+    else:
+        link = None
     if link is not None:
         await record_login_result(request, success=True)
         jwt_value = create_access_token(
-            data={"sub": "user", "role": "viewer", "person_id": link.person_id}
+            data={
+                "sub": "user",
+                "role": link.role if link.role in ("viewer", "editor") else "editor",
+                "person_id": link.person_id,
+                "actor": actor_name,
+            }
         )
         expires_in = settings.jwt_access_token_expire_hours * 3600
         base = settings.root_path or "/"
@@ -270,10 +290,12 @@ async def login_by_link(
     if tokens_equal(clean, settings.view_token):
         role = "viewer"
         focus = settings.view_focus_person_id or None
+        actor = None
         logger.info("Magic-link login successful (view token)")
     elif tokens_equal(clean, settings.edit_token):
         role = "editor"
         focus = None
+        actor = settings.editor_name
         logger.info("Magic-link login successful (edit token)")
     else:
         logger.warning("Invalid magic-link token (len=%d)", len(clean))
@@ -286,7 +308,12 @@ async def login_by_link(
     await record_login_result(request, success=True)
 
     access_token_jwt = create_access_token(
-        data={"sub": "user", "role": role, **({"person_id": focus} if focus else {})}
+        data={
+            "sub": "user",
+            "role": role,
+            **({"person_id": focus} if focus else {}),
+            **({"actor": actor} if actor else {}),
+        }
     )
     expires_in = settings.jwt_access_token_expire_hours * 3600
     # при деплое за префиксом редиректим в корень приложения, не домена

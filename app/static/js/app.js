@@ -1017,11 +1017,13 @@ async function loadPersonHistory(id) {
             )}</b></div>`
         )
         .join("");
+      const who = r.actor ? `<span class="history-actor">✍ ${escapeHtml(r.actor)}</span>` : "";
       return `<div class="history-item">
         <div class="history-head">
           <span class="history-action history-action-${escapeHtml(r.action)}">${escapeHtml(
         HISTORY_ACTION_LABELS[r.action] || r.action
       )}</span>
+          ${who}
           <time>${escapeHtml(fmtHistoryDate(r.created_at))}</time>
         </div>
         ${changes}

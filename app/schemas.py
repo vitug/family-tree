@@ -152,6 +152,7 @@ class PathResponse(BaseModel):
 
 class PersonRevisionRead(BaseModel):
     """Ревизия из истории правок человека."""
+    actor: str | None = None
 
     id: int
     person_id: int
