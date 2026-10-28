@@ -628,14 +628,33 @@ async function loadPeople(q = "") {
   }
 }
 
+function welcomeHtml() {
+  return `
+    <div class="welcome-guide">
+      <h3>🐴 Семейное дерево — с чего начать</h3>
+      <ol>
+        <li><b>Откройте свою ссылку доступа.</b> Её присылают лично (в сообщении
+            или файле): одна — для просмотра, другая — для редактирования.</li>
+        <li><b>Ничего вводить не нужно.</b> Открыв ссылку один раз, вы войдёте
+            автоматически — сессия держится сутки и продлевается сама.</li>
+        <li><b>Смотрите древо:</b> список людей слева, детали и фото — в панели
+            справа, поиск — по фамилии или имени (можно по-русски).</li>
+        <li><b>Если у вас ссылка редактирования</b> — можно добавлять людей,
+            связи, фото и историю правок.</li>
+      </ol>
+      <p class="welcome-note">Потеряли ссылку? Попросите её снова у владельца —
+      ссылки равносильны паролям и публично не публикуются.</p>
+      <button type="button" class="btn btn-primary btn-sm" id="btn-list-login" style="margin-top:0.65rem">Войти по ссылке вручную</button>
+    </div>`;
+}
+
 function renderPersonList() {
   if (!state.people.length) {
     if (state.isAuthenticated) {
       el.personList.innerHTML =
         '<p class="list-empty">Пока никого нет.<br>Добавьте первого человека.</p>';
     } else {
-      el.personList.innerHTML =
-        '<p class="list-empty">Требуется авторизация.<br><button type="button" class="btn btn-primary btn-sm" id="btn-list-login" style="margin-top:0.65rem">Войти</button></p>';
+      el.personList.innerHTML = welcomeHtml();
       $("#btn-list-login")?.addEventListener("click", () => window.requestAuth());
     }
     return;
@@ -686,8 +705,35 @@ async function selectPerson(id, { openDetail = false } = {}) {
   }
 }
 
+function renderPeopleOverview() {
+  let grid = el.empty.querySelector(".people-overview");
+  if (!grid) {
+    grid = document.createElement("div");
+    grid.className = "people-overview";
+    el.empty.appendChild(grid);
+  }
+  if (!state.people.length) {
+    grid.innerHTML = "";
+    return;
+  }
+  grid.innerHTML = state.people
+    .map(
+      (p) => `
+      <button type="button" class="overview-card" data-id="${p.id}">
+        ${avatarHtml(p, "avatar")}
+        <span class="overview-name">${escapeHtml(p.full_name)}</span>
+        <span class="overview-sub">${escapeHtml(formatDates(p) || "")}</span>
+      </button>`
+    )
+    .join("");
+  grid.querySelectorAll(".overview-card").forEach((card) => {
+    card.addEventListener("click", () => selectPerson(Number(card.dataset.id)));
+  });
+}
+
 async function renderMainView() {
   if (!state.selectedId && state.view !== "path") {
+    renderPeopleOverview();
     el.empty.classList.remove("hidden");
     el.canvas.classList.add("hidden");
     el.pathResult.classList.add("hidden");
@@ -1651,11 +1697,10 @@ async function init() {
   if (jwtManager.isTokenValid()) {
     try {
       await loadPeople();
-      if (state.people.length) {
-        // Prefer demo root "Сергей" if present
-        const sergey = state.people.find((p) => p.first_name === "Сергей");
-        await selectPerson((sergey || state.people[0]).id);
-      }
+      // Человека автоматически не выбираем: при входе показываем обзор
+      // всех людей с подсказкой, что нажать, чтобы увидеть древо.
+      state.selectedId = null;
+      renderMainView();
     } catch (err) {
       console.error("Ошибка при загрузке данных:", err);
       toast(`Не удалось загрузить данные: ${err.message}`, "error");

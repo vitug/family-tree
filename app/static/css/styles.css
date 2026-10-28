@@ -1554,3 +1554,61 @@ body::before {
   cursor: zoom-in;
   border: 1px solid var(--border, #444);
 }
+
+/* ── Инструкция «с чего начать» для неавторизованных ─────────── */
+.welcome-guide {
+  padding: 0.8rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.welcome-guide h3 {
+  margin: 0.2rem 0 0.6rem;
+  font-size: 1rem;
+}
+.welcome-guide ol {
+  padding-left: 1.2rem;
+  margin: 0.4rem 0;
+}
+.welcome-guide li {
+  margin-bottom: 0.45rem;
+}
+.welcome-guide .welcome-note {
+  color: var(--text-muted, #888);
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0;
+}
+
+/* ── Мобильная шапка: не обрезать длинный заголовок ─────────── */
+@media (max-width: 480px) {
+  .logo-text { font-size: 0.95rem; }
+  .logo-text::after { content: ""; }
+}
+
+/* ── Обзор всех людей при входе (до выбора человека) ─────────── */
+.people-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 900px;
+  margin: 1rem auto 0;
+  padding: 0 1rem;
+}
+.overview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.8rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--border, #333);
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+}
+.overview-card:hover { background: rgba(127, 127, 127, 0.12); }
+.overview-card .avatar { width: 52px; height: 52px; font-size: 1.1rem; }
+.overview-name { font-weight: 600; font-size: 0.88rem; line-height: 1.25; }
+.overview-sub { font-size: 0.75rem; color: var(--text-muted, #888); }
