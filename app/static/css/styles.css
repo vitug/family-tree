@@ -719,6 +719,14 @@ body::before {
   justify-content: center;
   gap: 1.25rem 2rem;
   padding: 0.5rem 0;
+  /* карточка «дотягивается» до целого вида при прокрутке */
+  scroll-snap-align: start;
+}
+
+@media (max-width: 900px) {
+  .view-area {
+    scroll-snap-type: y proximity;
+  }
 }
 
 .person-card {
