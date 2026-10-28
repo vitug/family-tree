@@ -1225,7 +1225,21 @@ body::before {
     border-radius: 16px 16px 14px 14px;
   }
 
+  /* открытая нижняя панель не должна накрывать карточки дерева */
+  body.detail-open .view-area {
+    padding-bottom: calc(52vh + 1.5rem);
+  }
+
+  .detail-panel {
+    transition: transform 0.25s ease;
+  }
+
+  .detail-panel.collapsed {
+    transform: translateY(calc(100% - 34px));
+  }
+
   .detail-sheet-handle {
+    cursor: pointer;
     display: block;
     width: 36px;
     height: 4px;

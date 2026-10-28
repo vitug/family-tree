@@ -904,6 +904,27 @@ function renderRelativesView(rel) {
 
 // ── Detail panel ───────────────────────────────────────
 
+// ── мобильная нижняя панель деталей: не накрывать дерево ──
+function syncDetailPadding() {
+  const sc = document.querySelector(".view-area");
+  const dp = el.detail;
+  if (!sc || !dp) return;
+  if (window.innerWidth <= 900 && !dp.classList.contains("hidden")) {
+    requestAnimationFrame(() => {
+      const h = dp.classList.contains("collapsed") ? 34 : dp.getBoundingClientRect().height;
+      sc.style.paddingBottom = h + 40 + "px";
+    });
+  } else {
+    sc.style.paddingBottom = "";
+  }
+}
+
+function hideDetailPanel() {
+  el.detail.classList.add("hidden");
+  document.body.classList.remove("detail-open");
+  syncDetailPadding();
+}
+
 async function showDetail(id) {
   let person = state.people.find((p) => p.id === id);
   if (!person) {
@@ -955,6 +976,9 @@ async function showDetail(id) {
 
   el.detail.dataset.personId = String(id);
   el.detail.classList.remove("hidden");
+  el.detail.classList.remove("collapsed");
+  document.body.classList.add("detail-open");
+  syncDetailPadding();
 
   // ── История правок ──────────────────────────────────────────
   loadPersonHistory(id).catch(() => {});
@@ -1194,7 +1218,7 @@ async function onFindPath(e) {
     $$("#view-tabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.view === "tree"));
     el.empty.classList.add("hidden");
     el.canvas.classList.add("hidden");
-    el.detail.classList.add("hidden");
+    hideDetailPanel();
     el.pathResult.classList.remove("hidden");
 
     const stepsHtml =
@@ -1292,7 +1316,7 @@ async function onImportGramps(e) {
       toast(`Предупреждений: ${data.warnings.length} (см. консоль)`, "error");
     }
     state.selectedId = null;
-    el.detail.classList.add("hidden");
+    hideDetailPanel();
     await loadPeople(el.search.value.trim());
     if (state.people.length) {
       await selectPerson(state.people[0].id);
@@ -1314,7 +1338,7 @@ async function deleteSelectedPerson() {
   try {
     await apiWithEditorAccess(`/persons/${id}`, { method: "DELETE" });
     toast("Человек удалён");
-    el.detail.classList.add("hidden");
+    hideDetailPanel();
     if (state.selectedId === id) {
       state.selectedId = null;
       el.canvas.classList.add("hidden");
@@ -1465,6 +1489,13 @@ function bindEvents() {
   });
 
   $("#btn-close-detail")?.addEventListener("click", () => el.detail.classList.add("hidden"));
+  // тап по полоске-ручке сворачивает/разворачивает нижнюю панель на мобильном
+  document.querySelector(".detail-sheet-handle")?.addEventListener("click", () => {
+    if (window.innerWidth <= 900) {
+      el.detail.classList.toggle("collapsed");
+      syncDetailPadding();
+    }
+  });
   $("#btn-set-root")?.addEventListener("click", () => {
     const id = Number(el.detail.dataset.personId);
     if (id) {
@@ -1560,7 +1591,7 @@ function bindEvents() {
       return;
     }
     if (el.detail && !el.detail.classList.contains("hidden")) {
-      el.detail.classList.add("hidden");
+      hideDetailPanel();
       return;
     }
     if (isMobileLayout() && el.sidebar?.classList.contains("open")) {
