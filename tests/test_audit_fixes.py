@@ -437,3 +437,48 @@ def test_priority_family_ordering(editor_client, app_env, monkeypatch):
         assert ids[0] == ivan["id"] or rank_names[0][0] == "vitug"
     finally:
         tsm.settings = orig
+
+
+def test_person_access_links(editor_client, app_env):
+    """Персональная ссылка: создание, вход по ней, фокус на человеке, отзыв."""
+    from app.models import PersonAccessLink
+
+    r = editor_client.post(
+        "/api/v1/persons", json={"first_name": "Лена", "last_name": "Тестова"}
+    )
+    assert r.status_code in (200, 201), r.text
+    pid = r.json()["id"]
+
+    # без авторизации — 401
+    anon = app_env  # TestClient без editor-куки
+    from fastapi.testclient import TestClient
+    from app.main import app as live_app
+    with TestClient(live_app) as anon_client:
+        assert anon_client.post(f"/api/v1/persons/{pid}/access-link").status_code == 401
+
+    # editor создаёт ссылку
+    r = editor_client.post(f"/api/v1/persons/{pid}/access-link")
+    assert r.status_code == 200, r.text
+    link = r.json()
+    assert link["person_id"] == pid and "/auth/link/" in link["url"]
+
+    # вход по ссылке — 303 на ?person=<id>, кука viewer
+    token = link["url"].rsplit("/", 1)[-1]
+    with TestClient(live_app, follow_redirects=False) as c:
+        resp = c.get(f"/api/v1/auth/link/{token}")
+        assert resp.status_code == 303
+        assert f"person={pid}" in resp.headers["location"]
+        me = c.get("/api/v1/auth/me")
+        assert me.status_code == 200 and me.json()["role"] == "viewer"
+        assert me.json()["person_id"] == pid
+
+    # список и отзыв
+    r = editor_client.get(f"/api/v1/persons/{pid}/access-links")
+    assert r.status_code == 200 and any(l["id"] == link["id"] for l in r.json())
+    r = editor_client.delete(f"/api/v1/persons/access-links/{link['id']}")
+    assert r.status_code == 204
+
+    # после отзыва ссылка не работает
+    with TestClient(live_app, follow_redirects=False) as c:
+        resp = c.get(f"/api/v1/auth/link/{token}")
+        assert resp.status_code in (401, 403, 404)

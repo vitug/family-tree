@@ -172,3 +172,11 @@ class PersonRevisionRead(BaseModel):
             except ValueError:
                 data.changes = None
         return data
+
+
+class PersonAccessLinkRead(BaseModel):
+    id: int
+    person_id: int
+    url: str
+    is_active: bool
+    created_at: datetime | None = None

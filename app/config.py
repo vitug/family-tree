@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # родственники (супруги, дети) показываются первыми в списке/обзоре.
     priority_family: str = ""
 
+    # Привязка основной viewer-ссылки к человеку: после входа открывает
+    # его карточку (id из persons; 0 = без привязки).
+    view_focus_person_id: int = 0
+
     # Токены авторизации для разных уровней доступа
     view_token: str = "family-view-token-dev"  # Для чтения данных (viewer роль)
     edit_token: str = "secret-edit-token-dev"  # Для чтения и записи (editor роль)

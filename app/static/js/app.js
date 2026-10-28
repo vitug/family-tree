@@ -955,6 +955,7 @@ async function showDetail(id) {
 
   // ── История правок ──────────────────────────────────────────
   loadPersonHistory(id).catch(() => {});
+  renderPersonLinkButton(id);
 }
 
 const HISTORY_FIELD_LABELS = {
@@ -1685,6 +1686,39 @@ function bindEvents() {
 
 // ── Init ───────────────────────────────────────────────
 
+/** Кнопка создания персональной ссылки доступа (только для редактора). */
+async function renderPersonLinkButton(id) {
+  if (state.userRole !== "editor") return;
+  let btn = document.getElementById("detail-link-btn");
+  if (btn) btn.remove();
+  btn = document.createElement("button");
+  btn.id = "detail-link-btn";
+  btn.className = "btn btn--ghost";
+  btn.textContent = "🔗 Ссылка для этого человека";
+  btn.addEventListener("click", async () => {
+    if (!confirm("Создать персональную ссылку доступа?\\nСсылка равносильна паролю — передавайте её только лично.")) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${API}/persons/${id}/access-link`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || res.status);
+      const data = await res.json();
+      const url = location.origin + data.url;
+      prompt(`Персональная ссылка (скопируйте и передайте лично):\\n${url}`, url);
+      toast("Ссылка создана", "success");
+    } catch (err) {
+      toast(`Не удалось создать ссылку: ${err.message}`, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  const hist = document.getElementById("detail-history");
+  if (hist) hist.insertAdjacentElement("afterend", btn);
+  else el.detailRel?.insertAdjacentElement("afterend", btn);
+}
+
 async function init() {
   bindEvents();
 
@@ -1699,8 +1733,16 @@ async function init() {
       await loadPeople();
       // Человека автоматически не выбираем: при входе показываем обзор
       // всех людей с подсказкой, что нажать, чтобы увидеть древо.
-      state.selectedId = null;
-      renderMainView();
+      // Исключение — персональная ссылка: ?person=<id> из редиректа входа.
+      const focusParam = new URLSearchParams(location.search).get("person");
+      const focusId = focusParam ? Number(focusParam) : null;
+      if (focusId && state.people.some((p) => p.id === focusId)) {
+        history.replaceState(null, "", location.pathname + location.hash);
+        await selectPerson(focusId, { openDetail: true });
+      } else {
+        state.selectedId = null;
+        renderMainView();
+      }
     } catch (err) {
       console.error("Ошибка при загрузке данных:", err);
       toast(`Не удалось загрузить данные: ${err.message}`, "error");

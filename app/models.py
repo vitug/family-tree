@@ -110,6 +110,22 @@ class Relationship(Base):
     )
 
 
+class PersonAccessLink(Base):
+    """Персональная ссылка доступа: открывает дерево конкретного человека."""
+
+    __tablename__ = "person_access_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("persons.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    person: Mapped["Person"] = relationship("Person")
+
+
 class Media(Base):
     """Фото/медиа, импортированные из Gramps или загруженные вручную."""
 

@@ -239,11 +239,41 @@ async def login_by_link(
     await ensure_not_locked(request)
 
     clean = access_token.strip()
+
+    # Персональная ссылка конкретного человека (viewer, фокус на человеке)
+    from app.database import SessionLocal
+    from app.models import PersonAccessLink
+    from sqlalchemy import select as _select
+    db = SessionLocal()
+    try:
+        link = db.scalars(
+            _select(PersonAccessLink).where(
+                PersonAccessLink.token == clean, PersonAccessLink.is_active
+            )
+        ).first()
+    finally:
+        db.close()
+    if link is not None:
+        await record_login_result(request, success=True)
+        jwt_value = create_access_token(
+            data={"sub": "user", "role": "viewer", "person_id": link.person_id}
+        )
+        expires_in = settings.jwt_access_token_expire_hours * 3600
+        base = settings.root_path or "/"
+        redirect = RedirectResponse(
+            url=f"{base}?person={link.person_id}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        set_auth_cookie(redirect, request, jwt_value, expires_in)
+        return redirect
+
     if tokens_equal(clean, settings.view_token):
         role = "viewer"
+        focus = settings.view_focus_person_id or None
         logger.info("Magic-link login successful (view token)")
     elif tokens_equal(clean, settings.edit_token):
         role = "editor"
+        focus = None
         logger.info("Magic-link login successful (edit token)")
     else:
         logger.warning("Invalid magic-link token (len=%d)", len(clean))
@@ -255,10 +285,14 @@ async def login_by_link(
 
     await record_login_result(request, success=True)
 
-    access_token_jwt = create_access_token(data={"sub": "user", "role": role})
+    access_token_jwt = create_access_token(
+        data={"sub": "user", "role": role, **({"person_id": focus} if focus else {})}
+    )
     expires_in = settings.jwt_access_token_expire_hours * 3600
     # при деплое за префиксом редиректим в корень приложения, не домена
     redirect_target = settings.root_path or "/"
+    if focus:
+        redirect_target = f"{redirect_target}?person={focus}"
     redirect = RedirectResponse(url=redirect_target, status_code=status.HTTP_303_SEE_OTHER)
     set_auth_cookie(redirect, request, access_token_jwt, expires_in)
     return redirect
@@ -327,6 +361,7 @@ async def get_current_user_info(
         "user": "user",
         "role": current_user.get("role"),
         "permissions": "read_write" if current_user.get("role") == "editor" else "read_only",
+        "person_id": current_user.get("person_id"),
         "exp": current_user.get("exp"),
         "iat": current_user.get("iat"),
     }
