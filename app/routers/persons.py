@@ -48,7 +48,7 @@ def list_persons(
     q: str | None = Query(None, description="Поиск по имени/фамилии"),
     family: str | None = Query(None, description="Отбор по фамилии + близкие родственники"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     service: TreeService = Depends(get_service),
 ) -> list[PersonRead]:
     logger.debug("list_persons: q=%s skip=%d limit=%d", q or "", skip, limit)

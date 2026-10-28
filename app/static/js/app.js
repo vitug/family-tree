@@ -611,8 +611,8 @@ function escapeHtml(s) {
 // ── People list ────────────────────────────────────────
 
 async function loadPeople(q = "") {
-  let query = q ? `?q=${encodeURIComponent(q)}` : "";
-  if (!q && state.familyFilter) query = `?family=${encodeURIComponent(state.familyFilter)}`;
+  let query = q ? `?q=${encodeURIComponent(q)}&limit=1000` : "?limit=1000";
+  if (!q && state.familyFilter) query = `?family=${encodeURIComponent(state.familyFilter)}&limit=1000`;
   console.log(`loadPeople called with q: "${q}", query: "${query}"`);
   try {
     state.people = await api(`/persons${query}`);
