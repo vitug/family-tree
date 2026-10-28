@@ -93,7 +93,50 @@ class TreeService:
                     func.cyrillic_lower(Person.maiden_name).like(pattern),
                 )
             )
+            return list(self.db.scalars(stmt.offset(skip).limit(limit)).all())
+
+        # Без поиска: приоритетная семья из конфига идёт первой
+        # (живые носители фамилии, затем их супруги и дети).
+        fam = (settings.priority_family or "").strip().lower()
+        if fam:
+            people = list(self.db.scalars(stmt).all())
+            ordered = self._priority_order(people, fam)
+            return ordered[skip : skip + limit]
         return list(self.db.scalars(stmt.offset(skip).limit(limit)).all())
+
+    def _priority_order(self, people: list[Person], fam: str) -> list[Person]:
+        """Живые носители фамилии → их супруги и дети → остальные носители → все прочие."""
+
+        def has_fam(p: Person) -> bool:
+            return (p.last_name or "").lower().startswith(fam) or (
+                p.maiden_name or ""
+            ).lower().startswith(fam)
+
+        living = {p.id for p in people if has_fam(p) and p.death_date is None}
+        rel_ids: set[int] = set()
+        for r in self.db.scalars(select(Relationship)):
+            if r.relation_type == RelationType.SPOUSE_OF:
+                if r.person_id in living:
+                    rel_ids.add(r.related_person_id)
+                if r.related_person_id in living:
+                    rel_ids.add(r.person_id)
+            else:  # PARENT_OF: person_id — родитель, related — ребёнок
+                if r.person_id in living:
+                    rel_ids.add(r.related_person_id)
+
+        def rank(p: Person) -> int:
+            if p.id in living:
+                return 0
+            if p.id in rel_ids:
+                return 1
+            if has_fam(p):
+                return 2
+            return 3
+
+        return sorted(
+            people,
+            key=lambda p: (rank(p), (p.last_name or ""), (p.first_name or "")),
+        )
 
     def update_person(self, person_id: int, data: PersonUpdate) -> Person:
         person = self.get_person(person_id)

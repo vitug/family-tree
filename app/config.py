@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_hours: int = 24
 
+    # Приоритетная семья: живые носители фамилии и их ближайшие
+    # родственники (супруги, дети) показываются первыми в списке/обзоре.
+    priority_family: str = ""
+
     # Токены авторизации для разных уровней доступа
     view_token: str = "family-view-token-dev"  # Для чтения данных (viewer роль)
     edit_token: str = "secret-edit-token-dev"  # Для чтения и записи (editor роль)

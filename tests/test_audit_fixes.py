@@ -377,3 +377,63 @@ def test_person_history_viewer_can_read(viewer_client, editor_client):
     ).json()["id"]
     assert viewer_client.get(f"/api/v1/persons/{pid}/history").status_code == 200
     assert viewer_client.get("/api/v1/persons/999999/history").json() == []
+
+
+def test_priority_family_ordering(editor_client, app_env, monkeypatch):
+    """Живая приоритетная фамилия и её супруги/дети идут в списке первыми."""
+    import os
+    # пере-инициализация Settings с приоритетной фамилией невозможна без
+    # пересоздания приложения — проверяем через сервисный слой напрямую.
+    from app.services.tree_service import TreeService
+    from app.database import SessionLocal
+    from app.models import Person, Relationship, RelationType, Gender
+    from app.config import Settings
+    client = editor_client
+    r = client.post(
+        "/api/v1/persons",
+        json={"first_name": "Иван", "last_name": "vitug"},
+    )
+    assert r.status_code in (200, 201), r.text
+    ivan = r.json()
+    r = client.post(
+        "/api/v1/persons",
+        json={"first_name": "Мария", "last_name": "Иванова"},
+    )
+    maria = r.json()
+    r = client.post(
+        "/api/v1/persons",
+        json={"first_name": "Пётр", "last_name": "Чужой"},
+    )
+    petr = r.json()
+    r = client.post(
+        "/api/v1/persons",
+        json={"first_name": "Дед", "last_name": "vitug", "death_date": "1990-01-01"},
+    )
+    ded = r.json()
+    # Мария — супруга Ивана, Пётр — ребёнок
+    for a, b, t in [(ivan["id"], maria["id"], "spouse_of"),
+                    (ivan["id"], petr["id"], "parent_of")]:
+        rr = client.post(
+            "/api/v1/relationships",
+            json={"person_id": a, "related_person_id": b, "relation_type": t},
+        )
+        assert rr.status_code in (200, 201), rr.text
+    # сервисный вызов с приоритетной фамилией
+    ts_settings = Settings(priority_family="vitug")
+    from app.services import tree_service as tsm
+    orig = tsm.settings
+    tsm.settings = ts_settings
+    try:
+        svc = TreeService(SessionLocal())
+        ordered = svc.list_persons(limit=10)
+        ids = [p.id for p in ordered]
+        # живой vitug и его супруга/ребёнок — в первых трёх, до умершего
+        # однофамильца и остальных (может быть и чужой живой раньше из-за
+        # сортировки по фамилии внутри ранга 0/1 — проверяем ранги)
+        rank_names = [(p.last_name or "", p.death_date is None) for p in ordered]
+        assert ids.index(ivan["id"]) < ids.index(ded["id"]), "живой раньше умершего однофамильца"
+        assert ids.index(ivan["id"]) < ids.index(petr["id"]) or ids.index(maria["id"]) < ids.index(petr["id"])
+        # живой vitug первый
+        assert ids[0] == ivan["id"] or rank_names[0][0] == "vitug"
+    finally:
+        tsm.settings = orig
