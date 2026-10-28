@@ -180,7 +180,9 @@ def _render_index() -> FileResponse:
     """index.html: инжектит window.ROOT_PATH и чинит абсолютные /static-пути."""
     root = settings.root_path
     if not root:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(
+            STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"}
+        )
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     # абсолютные ссылки на статику → с префиксом
     html = html.replace('"/static/', f'"{root}/static/')
@@ -190,7 +192,7 @@ def _render_index() -> FileResponse:
     # ROOT_PATH для app.js (API, media)
     inject = f'<script>window.ROOT_PATH="{root}";</script>'
     html = html.replace("</head>", f"{inject}</head>", 1)
-    return HTMLResponse(html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 # ── Защита OpenAPI ─────────────────────────────────────────────────────────
