@@ -97,6 +97,21 @@ def export_wiki(db: Session = Depends(get_db)) -> Response:
     )
 
 
+@router.get("/gedcom", dependencies=[Depends(require_editor_token)])
+def export_gedcom(db: Session = Depends(get_db)) -> Response:
+    """Экспорт дерева в GEDCOM 5.5.1 (.ged, UTF-8)."""
+    from app.services.gedcom_export import GedcomExporter
+    exporter = GedcomExporter(db)
+    text, stats = exporter.export_text()
+    if not stats.people:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Нет людей для экспорта")
+    return Response(
+        content=text.encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="family_tree.ged"'},
+    )
+
+
 @router.get("/gramps", dependencies=[Depends(require_editor_token)])
 def export_gramps(db: Session = Depends(get_db)) -> Response:
     """Экспорт дерева в Gramps (.gpkg): XML + фото, импортируется в Gramps напрямую."""
