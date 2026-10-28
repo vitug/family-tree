@@ -170,6 +170,16 @@ async def protected_media_path(
 # ── Статика ────────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# Старые закэшированные index.html ссылаются на /static/... без версии —
+# отдаём статику с no-cache, чтобы у всех клиентов обновлялась гарантированно.
+@app.middleware("http")
+async def _static_no_cache(request: Request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/static"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 # /media НЕ монтируется как StaticFiles — только защищённые эндпоинты выше
 
 
