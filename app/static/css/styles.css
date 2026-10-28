@@ -1625,6 +1625,13 @@ body::before {
 .empty-state:has(.people-overview) {
   justify-content: flex-start;
 }
+.overview-id {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  opacity: 0.7;
+}
+
 .overview-card {
   display: flex;
   flex-direction: column;

@@ -726,6 +726,7 @@ function renderPeopleOverview() {
         ${avatarHtml(p, "avatar")}
         <span class="overview-name">${escapeHtml(p.full_name)}</span>
         <span class="overview-sub">${escapeHtml(formatDates(p) || "")}</span>
+        <span class="overview-id">#${p.id}</span>
       </button>`
     )
     .join("");
