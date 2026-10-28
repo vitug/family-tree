@@ -590,6 +590,7 @@ class GrampsImporter:
     def _extract_names(self, person_el: ET.Element) -> dict[str, str | None]:
         birth_first = birth_surname = birth_suffix = None
         married_surname = None
+        unknown_first = unknown_surname = unknown_suffix = None
         alt_first = alt_surname = alt_suffix = None
 
         for name_el in _findall(person_el, "name"):
@@ -611,17 +612,23 @@ class GrampsImporter:
                         birth_first = first
                     if suffix and not birth_suffix:
                         birth_suffix = suffix
+            elif ntype == "unknown":
+                # Gramps: основное имя без классификации — текущая фамилия
+                if unknown_first is None:
+                    unknown_first = first or nick
+                    unknown_surname = surname
+                    unknown_suffix = suffix
             else:
                 if alt_first is None:
                     alt_first = first or nick
                     alt_surname = surname
                     alt_suffix = suffix
 
-        first_name = birth_first or alt_first
-        last_name = married_surname or birth_surname or alt_surname
-        middle_name = birth_suffix or alt_suffix
+        first_name = birth_first or unknown_first or alt_first
+        last_name = married_surname or unknown_surname or birth_surname or alt_surname
+        middle_name = birth_suffix or unknown_suffix or alt_suffix
         maiden_name = None
-        if married_surname and birth_surname and married_surname != birth_surname:
+        if birth_surname and birth_surname != last_name:
             maiden_name = birth_surname
 
         return {

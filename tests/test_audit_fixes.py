@@ -628,3 +628,20 @@ def test_search_by_id(editor_client):
     pid = r.json()["id"]
     found = editor_client.get(f"/api/v1/persons?q={pid}").json()
     assert any(p["id"] == pid for p in found)
+
+
+def test_gramps_names_unknown_primary():
+    """Имя type=Unknown — текущая фамилия; Birth Name — девичья (инцидент Кузнецова/Яковлева)."""
+    import xml.etree.ElementTree as ET
+    from app.services.gramps_import import GrampsImporter
+
+    xml = """<person handle="h" id="I1">
+      <gender>F</gender>
+      <name type="Unknown"><first>Светлана</first><surname>Кузнецова</surname></name>
+      <name alt="1" type="Birth Name"><first>Светлана</first><surname>Яковлева</surname></name>
+    </person>"""
+    importer = GrampsImporter.__new__(GrampsImporter)
+    names = importer._extract_names(ET.fromstring(xml))
+    assert names["last_name"] == "Кузнецова"
+    assert names["maiden_name"] == "Яковлева"
+    assert names["first_name"] == "Светлана"
