@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Имя автора правок для глобальной editor-ссылки (в истории правок).
     editor_name: str = "Редактор"
 
+    # Фамилия для отбора по глобальной view-ссылке: после входа показываются
+    # только эта семья и ближайшие родственники (пусто = все люди).
+    view_family: str = ""
+
     # Токены авторизации для разных уровней доступа
     view_token: str = "family-view-token-dev"  # Для чтения данных (viewer роль)
     edit_token: str = "secret-edit-token-dev"  # Для чтения и записи (editor роль)

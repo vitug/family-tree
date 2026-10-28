@@ -611,7 +611,8 @@ function escapeHtml(s) {
 // ── People list ────────────────────────────────────────
 
 async function loadPeople(q = "") {
-  const query = q ? `?q=${encodeURIComponent(q)}` : "";
+  let query = q ? `?q=${encodeURIComponent(q)}` : "";
+  if (!q && state.familyFilter) query = `?family=${encodeURIComponent(state.familyFilter)}`;
   console.log(`loadPeople called with q: "${q}", query: "${query}"`);
   try {
     state.people = await api(`/persons${query}`);
@@ -1690,6 +1691,31 @@ function bindEvents() {
 
 // ── Init ───────────────────────────────────────────────
 
+/** Плашка активного отбора по фамилии + кнопка «показать всех». */
+function showFamilyFilterChip(family) {
+  let chip = document.getElementById("family-filter-chip");
+  if (!chip) {
+    chip = document.createElement("div");
+    chip.id = "family-filter-chip";
+    chip.className = "family-filter-chip";
+    const bar = document.querySelector(".controls") || document.querySelector("main") || document.body;
+    bar.insertAdjacentElement("afterbegin", chip);
+  }
+  chip.innerHTML = "";
+  const label = document.createElement("span");
+  label.textContent = `👨‍👩‍👧 Семья: ${family} и близкие`;
+  const btn = document.createElement("button");
+  btn.className = "btn btn--ghost";
+  btn.textContent = "Показать всех";
+  btn.addEventListener("click", async () => {
+    state.familyFilter = null;
+    chip.remove();
+    await loadPeople();
+    renderMainView();
+  });
+  chip.append(label, btn);
+}
+
 /** Кнопка создания персональной ссылки доступа (только для редактора). */
 async function renderPersonLinkButton(id) {
   if (!state.isAdmin) return; // ссылки создаёт только админ
@@ -1748,7 +1774,18 @@ async function init() {
       // Человека автоматически не выбираем: при входе показываем обзор
       // всех людей с подсказкой, что нажать, чтобы увидеть древо.
       // Исключение — персональная ссылка: ?person=<id> из редиректа входа.
-      const focusParam = new URLSearchParams(location.search).get("person");
+      const params = new URLSearchParams(location.search);
+      const familyParam = params.get("family");
+      if (familyParam) {
+        history.replaceState(null, "", location.pathname + location.hash);
+        state.familyFilter = familyParam;
+        await loadPeople();
+        state.selectedId = null;
+        renderMainView();
+        showFamilyFilterChip(familyParam);
+        return;
+      }
+      const focusParam = params.get("person");
       const focusId = focusParam ? Number(focusParam) : null;
       if (focusId && state.people.some((p) => p.id === focusId)) {
         history.replaceState(null, "", location.pathname + location.hash);

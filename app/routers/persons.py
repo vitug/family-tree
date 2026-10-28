@@ -46,12 +46,13 @@ def _enforce_scope(db: Session, user: dict, *person_ids: int) -> None:
 @router.get("", response_model=list[PersonRead], dependencies=[Depends(require_jwt_token)])
 def list_persons(
     q: str | None = Query(None, description="Поиск по имени/фамилии"),
+    family: str | None = Query(None, description="Отбор по фамилии + близкие родственники"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     service: TreeService = Depends(get_service),
 ) -> list[PersonRead]:
     logger.debug("list_persons: q=%s skip=%d limit=%d", q or "", skip, limit)
-    return service.list_persons(q=q, skip=skip, limit=limit)
+    return service.list_persons(q=q, family=family, skip=skip, limit=limit)
 
 
 @router.get("/{person_id}", response_model=PersonRead, dependencies=[Depends(require_jwt_token)])

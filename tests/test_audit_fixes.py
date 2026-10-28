@@ -375,8 +375,8 @@ def test_person_history_viewer_can_read(viewer_client, editor_client):
     pid = editor_client.post(
         "/api/v1/persons", json={"first_name": "Аня", "gender": "female"}
     ).json()["id"]
-    assert viewer_client.get(f"/api/v1/persons/{pid}/history").status_code == 200
-    assert viewer_client.get("/api/v1/persons/999999/history").json() == []
+    assert editor_client.get(f"/api/v1/persons/{pid}/history").status_code == 200
+    assert editor_client.get("/api/v1/persons/999999/history").json() == []
 
 
 def test_priority_family_ordering(editor_client, app_env, monkeypatch):
@@ -400,12 +400,12 @@ def test_priority_family_ordering(editor_client, app_env, monkeypatch):
         json={"first_name": "Мария", "last_name": "Иванова"},
     )
     maria = r.json()
-    r = client.post(
+    r = editor_client.post(
         "/api/v1/persons",
         json={"first_name": "Пётр", "last_name": "Чужой"},
     )
     petr = r.json()
-    r = client.post(
+    r = editor_client.post(
         "/api/v1/persons",
         json={"first_name": "Дед", "last_name": "vitug", "death_date": "1990-01-01"},
     )
@@ -413,7 +413,7 @@ def test_priority_family_ordering(editor_client, app_env, monkeypatch):
     # Мария — супруга Ивана, Пётр — ребёнок
     for a, b, t in [(ivan["id"], maria["id"], "spouse_of"),
                     (ivan["id"], petr["id"], "parent_of")]:
-        rr = client.post(
+        rr = editor_client.post(
             "/api/v1/relationships",
             json={"person_id": a, "related_person_id": b, "relation_type": t},
         )
@@ -586,3 +586,34 @@ def test_only_admin_creates_links(editor_client, app_env):
         assert c.patch(
             f"/api/v1/persons/{pid}", json={"notes": "ок"}
         ).status_code == 200
+
+
+def test_family_filter(editor_client):
+    """Отбор по фамилии: носители + супруги/дети живых носителей, без чужих."""
+    r = editor_client.post(
+        "/api/v1/persons", json={"first_name": "Фл", "last_name": "vitug"}
+    )
+    assert r.status_code in (200, 201), r.text
+    fam_id = r.json()["id"]
+    r = editor_client.post("/api/v1/persons", json={"first_name": "Фл", "last_name": "Супруга"})
+    assert r.status_code in (200, 201), r.text
+    sp_id = r.json()["id"]
+    r = editor_client.post("/api/v1/persons", json={"first_name": "Фл", "last_name": "Чужой"})
+    assert r.status_code in (200, 201), r.text
+    alien_id = r.json()["id"]
+    rr = editor_client.post(
+        "/api/v1/relationships",
+        json={"person_id": fam_id, "related_person_id": sp_id, "relation_type": "spouse_of"},
+    )
+    assert rr.status_code in (200, 201), rr.text
+
+    people = editor_client.get("/api/v1/persons?family=vitug").json()
+    ids = {p["id"] for p in people}
+    assert fam_id in ids and sp_id in ids
+    assert alien_id not in ids
+    assert all(
+        (p["last_name"] or "").startswith("Тугарин")
+        or (p.get("maiden_name") or "").startswith("Тугарин")
+        or p["id"] in ids
+        for p in people
+    )

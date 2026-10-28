@@ -337,7 +337,12 @@ async def login_by_link(
     expires_in = settings.jwt_access_token_expire_hours * 3600
     # при деплое за префиксом редиректим в корень приложения, не домена
     redirect_target = settings.root_path or "/"
-    if focus:
+    if role == "viewer" and (settings.view_family or "").strip():
+        # view-ссылка: отбор по фамилии (приоритетнее фокуса на человеке)
+        from urllib.parse import quote
+
+        redirect_target = f"{redirect_target}?family={quote(settings.view_family.strip())}"
+    elif focus:
         redirect_target = f"{redirect_target}?person={focus}"
     redirect = RedirectResponse(url=redirect_target, status_code=status.HTTP_303_SEE_OTHER)
     set_auth_cookie(redirect, request, access_token_jwt, expires_in)

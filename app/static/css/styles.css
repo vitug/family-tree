@@ -1618,3 +1618,14 @@ body::before {
   font-size: 0.85em;
   margin-left: 6px;
 }
+
+.family-filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  margin: 8px 0;
+  border-radius: 10px;
+  background: rgba(200, 138, 74, 0.12);
+  font-size: 0.95em;
+}

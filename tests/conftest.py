@@ -29,6 +29,7 @@ os.environ["FAMILY_TREE_ROOT_PATH"] = ""
 os.environ["FAMILY_TREE_TRUST_PROXY"] = "false"
 os.environ["FAMILY_TREE_PRIORITY_FAMILY"] = ""
 os.environ["FAMILY_TREE_VIEW_FOCUS_PERSON_ID"] = "0"
+os.environ["FAMILY_TREE_VIEW_FAMILY"] = ""
 
 
 @pytest.fixture()

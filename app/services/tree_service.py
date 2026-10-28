@@ -80,10 +80,19 @@ class TreeService:
         self,
         *,
         q: str | None = None,
+        family: str | None = None,
         skip: int = 0,
         limit: int = 50,
     ) -> list[Person]:
         stmt = select(Person).order_by(Person.id)
+        if family and family.strip():
+            # Отбор по фамилии: носители (текущая/девичья) + супруги и дети
+            # живых носителей — живые первыми.
+            fam = family.strip().lower()
+            people = list(self.db.scalars(stmt).all())
+            ordered = self._priority_order(people, fam)
+            group = [p for p in ordered if self._family_rank(p, fam) < 3]
+            return group[skip : skip + limit]
         if q:
             pattern = f"%{q.strip().lower()}%"
             # Функция cyrillic_lower уже зарегистрирована на engine (см. database.py)
@@ -127,18 +136,50 @@ class TreeService:
                     rel_ids.add(r.related_person_id)
 
         def rank(p: Person) -> int:
-            if p.id in living:
-                return 0
-            if p.id in rel_ids:
-                return 1
-            if has_fam(p):
-                return 2
-            return 3
+            return self._family_rank(p, fam, living, rel_ids, has_fam)
 
         return sorted(
             people,
             key=lambda p: (rank(p), (p.last_name or ""), (p.first_name or "")),
         )
+
+    def _family_rank(
+        self,
+        p: Person,
+        fam: str,
+        living: set[int] | None = None,
+        rel_ids: set[int] | None = None,
+        has_fam=None,
+    ) -> int:
+        """0 живой носитель, 1 супруг/ребёнок живого носителя, 2 прочий носитель, 3 чужой."""
+        if has_fam is None:
+            def has_fam(p: Person) -> bool:
+                return (p.last_name or "").lower().startswith(fam) or (
+                    p.maiden_name or ""
+                ).lower().startswith(fam)
+
+        if living is None or rel_ids is None:
+            living = {
+                x.id for x in self.db.scalars(select(Person)).all()
+                if has_fam(x) and x.death_date is None
+            }
+            rel_ids = set()
+            for r in self.db.scalars(select(Relationship)):
+                if r.relation_type == RelationType.SPOUSE_OF:
+                    if r.person_id in living:
+                        rel_ids.add(r.related_person_id)
+                    if r.related_person_id in living:
+                        rel_ids.add(r.person_id)
+                else:
+                    if r.person_id in living:
+                        rel_ids.add(r.related_person_id)
+        if p.id in living:
+            return 0
+        if p.id in rel_ids:
+            return 1
+        if has_fam(p):
+            return 2
+        return 3
 
     def update_person(self, person_id: int, data: PersonUpdate) -> Person:
         person = self.get_person(person_id)
