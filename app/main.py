@@ -184,6 +184,9 @@ def _render_index() -> FileResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     # абсолютные ссылки на статику → с префиксом
     html = html.replace('"/static/', f'"{root}/static/')
+    # версионирование статики: браузер не держит старый app.js/styles.css
+    v = str(int((STATIC_DIR / "js" / "app.js").stat().st_mtime))
+    html = html.replace('app.js"', f'app.js?v={v}"').replace('styles.css"', f'styles.css?v={v}"')
     # ROOT_PATH для app.js (API, media)
     inject = f'<script>window.ROOT_PATH="{root}";</script>'
     html = html.replace("</head>", f"{inject}</head>", 1)

@@ -229,7 +229,7 @@ def test_index_injects_root_path(app_env, monkeypatch):
     resp = app_env.get("/")
     assert resp.status_code == 200
     assert 'window.ROOT_PATH="/fTkTest123"' in resp.text
-    assert '"/fTkTest123/static/js/app.js"' in resp.text
+    assert "/fTkTest123/static/js/app.js" in resp.text
 
 
 def test_index_without_root_path_plain(app_env):
