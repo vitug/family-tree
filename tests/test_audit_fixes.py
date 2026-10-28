@@ -554,3 +554,35 @@ def test_scoped_access_link(editor_client, app_env):
             "/api/v1/relationships",
             json={"person_id": zhen, "related_person_id": maria, "relation_type": "spouse_of"},
         ).status_code in (200, 201)
+
+
+def test_only_admin_creates_links(editor_client, app_env):
+    """Ссылки создаёт/отзывает только админ (глобальная editor-ссылка)."""
+    from fastapi.testclient import TestClient
+    from app.main import app as live_app
+
+    r = editor_client.post("/api/v1/persons", json={"first_name": "Адм", "last_name": "Тест"})
+    pid = r.json()["id"]
+
+    # админ (editor_client — глобальная ссылка) создаёт unrestricted-ссылку
+    me = editor_client.get("/api/v1/auth/me").json()
+    assert me["is_admin"] is True
+    r = editor_client.post(f"/api/v1/persons/{pid}/access-link", json={"role": "editor"})
+    assert r.status_code == 200, r.text
+    token = r.json()["url"].rsplit("/", 1)[-1]
+
+    # сессия по персональной ссылке (editor, без scope) — НЕ админ
+    with TestClient(live_app) as c:
+        c.get(f"/api/v1/auth/link/{token}", follow_redirects=False)
+        me = c.get("/api/v1/auth/me").json()
+        assert me["role"] == "editor" and me["is_admin"] is False
+        # создавать ссылки нельзя
+        assert c.post(
+            f"/api/v1/persons/{pid}/access-link", json={"role": "editor"}
+        ).status_code == 403
+        # отзывать чужие ссылки нельзя
+        assert c.delete("/api/v1/persons/access-links/999").status_code in (403, 404)
+        # свои данные править можно
+        assert c.patch(
+            f"/api/v1/persons/{pid}", json={"notes": "ок"}
+        ).status_code == 200

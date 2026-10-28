@@ -165,6 +165,22 @@ async def require_jwt_token(
     return current_user
 
 
+async def require_admin(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Админ: глобальная editor-ссылка (без привязки к человеку и без scope).
+
+    Персональные ссылки (даже editor с полными правами) админом не являются:
+    создавать и отзывать ссылки может только владелец глобальной ссылки.
+    """
+    if current_user.get("role") != "editor" or current_user.get("person_id") is not None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Создавать ссылки может только администратор",
+        )
+    return current_user
+
+
 async def require_editor_token(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
@@ -392,6 +408,8 @@ async def get_current_user_info(
         "role": current_user.get("role"),
         "permissions": "read_write" if current_user.get("role") == "editor" else "read_only",
         "person_id": current_user.get("person_id"),
+        "is_admin": current_user.get("role") == "editor"
+        and current_user.get("person_id") is None,
         "exp": current_user.get("exp"),
         "iat": current_user.get("iat"),
     }

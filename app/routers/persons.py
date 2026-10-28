@@ -4,7 +4,7 @@ import logging
 
 from sqlalchemy import select
 
-from app.routers.auth import require_jwt_token, require_editor_token
+from app.routers.auth import require_admin, require_editor_token, require_jwt_token
 from app.database import get_db
 from app.models import Person, PersonAccessLink
 from app.schemas import (
@@ -116,7 +116,7 @@ def _link_url(token: str) -> str:
 @router.post(
     "/{person_id}/access-link",
     response_model=PersonAccessLinkRead,
-    dependencies=[Depends(require_editor_token)],
+    dependencies=[Depends(require_admin)],
 )
 def create_access_link(
     person_id: int,
@@ -161,7 +161,7 @@ def create_access_link(
 @router.get(
     "/{person_id}/access-links",
     response_model=list[PersonAccessLinkRead],
-    dependencies=[Depends(require_editor_token)],
+    dependencies=[Depends(require_admin)],
 )
 def list_access_links(person_id: int, db: Session = Depends(get_db)):
     links = (
@@ -184,7 +184,7 @@ def list_access_links(person_id: int, db: Session = Depends(get_db)):
 @router.delete(
     "/access-links/{link_id}",
     status_code=204,
-    dependencies=[Depends(require_editor_token)],
+    dependencies=[Depends(require_admin)],
 )
 def revoke_access_link(link_id: int, db: Session = Depends(get_db)):
     link = db.get(PersonAccessLink, link_id)

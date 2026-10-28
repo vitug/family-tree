@@ -36,10 +36,12 @@ const jwtManager = {
       }
       const data = await res.json();
       this.userRole = data.role || null;
+      this.isAdmin = !!data.is_admin;
       // exp — unix seconds из JWT
       this.tokenExpiry = data.exp ? data.exp * 1000 : null;
       if (typeof state !== "undefined") {
         state.userRole = this.userRole;
+        state.isAdmin = !!this.isAdmin;
         state.isAuthenticated = this.isTokenValid();
       }
       this._scheduleRefresh();
@@ -1690,7 +1692,7 @@ function bindEvents() {
 
 /** Кнопка создания персональной ссылки доступа (только для редактора). */
 async function renderPersonLinkButton(id) {
-  if (state.userRole !== "editor") return;
+  if (!state.isAdmin) return; // ссылки создаёт только админ
   let btn = document.getElementById("detail-link-btn");
   if (btn) btn.remove();
   btn = document.createElement("button");
@@ -1737,6 +1739,7 @@ async function init() {
   await jwtManager.init();
   state.isAuthenticated = jwtManager.isTokenValid();
   state.userRole = jwtManager.userRole;
+  state.isAdmin = !!jwtManager.isAdmin;
   if (typeof window.__updateAuthUI === "function") window.__updateAuthUI();
 
   if (jwtManager.isTokenValid()) {
