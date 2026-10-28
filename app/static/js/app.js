@@ -1699,11 +1699,20 @@ async function renderPersonLinkButton(id) {
   btn.textContent = "🔗 Ссылка для этого человека";
   btn.addEventListener("click", async () => {
     if (!confirm("Создать персональную ссылку доступа?\\nСсылка равносильна паролю — передавайте её только лично.")) return;
+    const depthRaw = prompt(
+      "Ограничить права редактирования семьёй этого человека?\\n" +
+      "Введите глубину в поколениях (например, 2 — родители, дети, супруги и их родители/дети).\\n" +
+      "Пусто или Отмена — без ограничений (всё дерево)."
+    );
+    const body = {};
+    if (depthRaw && Number(depthRaw) > 0) body.scope_depth = Number(depthRaw);
     btn.disabled = true;
     try {
       const res = await fetch(`${API}/persons/${id}/access-link`, {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json()).detail || res.status);
       const data = await res.json();

@@ -175,9 +175,18 @@ class PersonRevisionRead(BaseModel):
         return data
 
 
+class PersonAccessLinkCreate(BaseModel):
+    """Параметры персональной ссылки: роль и ограничение семьёй (поколений)."""
+
+    role: str = "editor"  # editor | viewer
+    scope_depth: int | None = None  # None = без ограничений
+
+
 class PersonAccessLinkRead(BaseModel):
     id: int
     person_id: int
     url: str
     is_active: bool
+    role: str = "editor"
+    scope_depth: int | None = None
     created_at: datetime | None = None

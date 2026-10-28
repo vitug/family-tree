@@ -15,6 +15,27 @@ def get_service(db: Session = Depends(get_db)) -> TreeService:
     return TreeService(db)
 
 
+def _enforce_scope(db: Session, user: dict, *person_ids: int) -> None:
+    """Scoped-ссылка: связывать можно только внутри своей семьи."""
+    from fastapi import HTTPException, status as st
+
+    from app.services.access_scope import can_edit_person
+
+    allowed = [pid for pid in person_ids if pid is not None]
+    if not allowed:
+        return
+    from app.services.access_scope import user_scope
+
+    scope = user_scope(db, user)
+    if scope is None:
+        return
+    if not any(pid in scope for pid in allowed):
+        raise HTTPException(
+            st.HTTP_403_FORBIDDEN,
+            "Права ограничены семьёй этого человека",
+        )
+
+
 @router.get("", response_model=list[RelationshipRead], dependencies=[Depends(require_jwt_token)])
 def list_relationships(
     person_id: int | None = Query(None, description="Фильтр по участнику связи"),
@@ -28,6 +49,8 @@ def list_relationships(
 def create_relationship(
     data: RelationshipCreate,
     service: TreeService = Depends(get_service),
+    user: dict = Depends(require_jwt_token),
+    db: Session = Depends(get_db),
 ) -> RelationshipRead:
     """Создать родственную связь.
 
@@ -35,6 +58,7 @@ def create_relationship(
     - `spouse_of`: супруги (порядок id не важен)
     """
     logger.info("Create relationship: %s %s %s", data.relation_type, data.person_id, data.related_person_id)
+    _enforce_scope(db, user, data.person_id, data.related_person_id)
     return service.add_relationship(data)
 
 
@@ -42,6 +66,13 @@ def create_relationship(
 def delete_relationship(
     relationship_id: int,
     service: TreeService = Depends(get_service),
+    user: dict = Depends(require_jwt_token),
+    db: Session = Depends(get_db),
 ) -> None:
     logger.info("Delete relationship id=%d", relationship_id)
+    from app.models import Relationship
+
+    rel = db.get(Relationship, relationship_id)
+    if rel is not None:
+        _enforce_scope(db, user, rel.person_id, rel.related_person_id)
     service.delete_relationship(relationship_id)

@@ -123,6 +123,8 @@ class PersonAccessLink(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     # роль сессии по этой ссылке: editor (может править) или viewer
     role: Mapped[str] = mapped_column(String(16), default="editor")
+    # Ограничение прав: глубина семьи в поколениях (NULL = без ограничений)
+    scope_depth: Mapped[int | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     person: Mapped["Person"] = relationship("Person")

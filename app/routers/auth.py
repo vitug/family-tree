@@ -257,8 +257,9 @@ async def login_by_link(
             _link_person_id = link.person_id
             _link_role = link.role
             _link_actor = (link.person.full_name or "")[:400] if link.person else None
+            _link_scope = link.scope_depth
         else:
-            _link_person_id = _link_role = _link_actor = None
+            _link_person_id = _link_role = _link_actor = _link_scope = None
     finally:
         db.close()
     if _link_person_id is not None:
@@ -266,6 +267,7 @@ async def login_by_link(
             person_id=_link_person_id, role=_link_role, person=None
         )
         actor_name = _link_actor
+        scope_depth = _link_scope
     else:
         link = None
     if link is not None:
@@ -276,6 +278,7 @@ async def login_by_link(
                 "role": link.role if link.role in ("viewer", "editor") else "editor",
                 "person_id": link.person_id,
                 "actor": actor_name,
+                "scope_depth": scope_depth,
             }
         )
         expires_in = settings.jwt_access_token_expire_hours * 3600

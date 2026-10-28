@@ -497,3 +497,60 @@ def test_revision_actor(editor_client, app_env):
     assert hist, "история пуста"
     actors = {h.get("actor") for h in hist}
     assert "Редактор" in actors, actors
+
+
+def test_scoped_access_link(editor_client, app_env):
+    """Ссылка с ограничением семьёй: правит свою семью, чужих — 403."""
+    from fastapi.testclient import TestClient
+    from app.main import app as live_app
+
+    # семья: Иван — родитель Марии; чужой Пётр
+    r = editor_client.post("/api/v1/persons", json={"first_name": "Сц", "last_name": "Иван"})
+    assert r.status_code in (200, 201), r.text
+    ivan = r.json()["id"]
+    r = editor_client.post("/api/v1/persons", json={"first_name": "Сц", "last_name": "Мария"})
+    assert r.status_code in (200, 201), r.text
+    maria = r.json()["id"]
+    r = editor_client.post("/api/v1/persons", json={"first_name": "Сц", "last_name": "Пётр"})
+    assert r.status_code in (200, 201), r.text
+    petr = r.json()["id"]
+    rr = editor_client.post(
+        "/api/v1/relationships",
+        json={"person_id": ivan, "related_person_id": maria, "relation_type": "parent_of"},
+    )
+    assert rr.status_code in (200, 201), rr.text
+
+    # ссылка с глубиной 1 (родители/дети/супруги)
+    r = editor_client.post(
+        f"/api/v1/persons/{ivan}/access-link",
+        json={"role": "editor", "scope_depth": 1},
+    )
+    assert r.status_code == 200, r.text
+    token = r.json()["url"].rsplit("/", 1)[-1]
+
+    with TestClient(live_app) as c:
+        c.get(f"/api/v1/auth/link/{token}", follow_redirects=False)
+        me = c.get("/api/v1/auth/me").json()
+        assert me["role"] == "editor" and me["person_id"] == ivan
+        # свою семью править можно
+        assert c.patch(
+            f"/api/v1/persons/{maria}", json={"notes": "ок"}
+        ).status_code == 200
+        # чужого — нельзя
+        assert c.patch(
+            f"/api/v1/persons/{petr}", json={"notes": "нет"}
+        ).status_code == 403
+        # связь двух чужих людей — нельзя
+        r = editor_client.post("/api/v1/persons", json={"first_name": "Сц", "last_name": "Др"})
+        dr = r.json()["id"]
+        assert c.post(
+            "/api/v1/relationships",
+            json={"person_id": petr, "related_person_id": dr, "relation_type": "spouse_of"},
+        ).status_code == 403
+        # добавить нового супруга в свою семью — можно (один конец в семье)
+        r = editor_client.post("/api/v1/persons", json={"first_name": "Сц", "last_name": "Жен"})
+        zhen = r.json()["id"]
+        assert c.post(
+            "/api/v1/relationships",
+            json={"person_id": zhen, "related_person_id": maria, "relation_type": "spouse_of"},
+        ).status_code in (200, 201)

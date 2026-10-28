@@ -43,7 +43,10 @@ def _migrate_columns() -> None:
 
     cols = {
         "person_revisions": {"actor": "TEXT"},
-        "person_access_links": {"role": "VARCHAR(16) DEFAULT 'editor' NOT NULL"},
+        "person_access_links": {
+            "role": "VARCHAR(16) DEFAULT 'editor' NOT NULL",
+            "scope_depth": "INTEGER",
+        },
     }
     with engine.begin() as conn:
         for table, adds in cols.items():
