@@ -741,10 +741,14 @@ async function renderMainView() {
     el.empty.classList.remove("hidden");
     el.canvas.classList.add("hidden");
     el.pathResult.classList.add("hidden");
+    const backBtn = $("#btn-back-overview");
+    if (backBtn) backBtn.hidden = true;
     return;
   }
 
   el.empty.classList.add("hidden");
+  const backBtn = $("#btn-back-overview");
+  if (backBtn) backBtn.hidden = false;
 
   if (state.view === "path") {
     // path result managed separately
@@ -1540,6 +1544,13 @@ function bindEvents() {
     fillRelationSelects();
     openModal("modal-path");
   });
+  $("#btn-back-overview")?.addEventListener("click", async () => {
+    state.selectedId = null;
+    hideDetailPanel();
+    history.replaceState(null, "", location.pathname + location.hash);
+    await renderMainView();
+  });
+
   $("#btn-refresh")?.addEventListener("click", () => {
     if (state.selectedId) renderMainView().catch((e) => toast(e.message, "error"));
   });
