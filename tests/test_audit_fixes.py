@@ -216,7 +216,7 @@ def test_magic_link_redirect_uses_root_path(app_env, monkeypatch):
     monkeypatch.setattr(settings, "root_path", "/fTkTest123")
     resp = app_env.get(f"/api/v1/auth/link/{settings.view_token}", follow_redirects=False)
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/fTkTest123"
+    assert resp.headers["location"] == "/fTkTest123/"
 
 
 # ── Префикс reverse-proxy ───────────────────────────────────────────────────

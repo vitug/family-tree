@@ -337,6 +337,9 @@ async def login_by_link(
     expires_in = settings.jwt_access_token_expire_hours * 3600
     # при деплое за префиксом редиректим в корень приложения, не домена
     redirect_target = settings.root_path or "/"
+    # nginx 301 при добавлении слэша теряет query — слэш добавляем сами
+    if not redirect_target.endswith("/"):
+        redirect_target += "/"
     if role == "viewer" and (settings.view_family or "").strip():
         # view-ссылка: отбор по фамилии (приоритетнее фокуса на человеке)
         from urllib.parse import quote
