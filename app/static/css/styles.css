@@ -810,6 +810,14 @@ body::before {
   word-break: break-word;
 }
 
+.person-card .card-id {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  opacity: 0.7;
+  margin-top: 0.15rem;
+}
+
 .person-card .card-dates {
   font-size: 0.75rem;
   color: var(--text-muted);

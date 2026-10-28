@@ -842,6 +842,7 @@ function cardHtml(entry) {
       ${avatarHtml(p, "card-avatar")}
       <div class="card-name">${escapeHtml(p.full_name)}</div>
       <div class="card-dates">${escapeHtml(formatDates(p))}</div>
+      <div class="card-id">#${p.id}</div>
       ${spouses}
     </div>`;
 }
@@ -934,6 +935,7 @@ async function showDetail(id) {
 
   el.detailName.textContent = person.full_name;
   const bits = [formatDates(person), person.birth_place, genderLabel(person.gender)].filter(Boolean);
+  bits.push(`ID ${id}`);
   el.detailSub.textContent = bits.join(" · ");
 
   // фото в панели

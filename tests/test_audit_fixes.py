@@ -617,3 +617,14 @@ def test_family_filter(editor_client):
         or p["id"] in ids
         for p in people
     )
+
+
+def test_search_by_id(editor_client):
+    """Поиск по числовому id находит точного человека."""
+    r = editor_client.post(
+        "/api/v1/persons", json={"first_name": "Ид", "last_name": "Поиск"}
+    )
+    assert r.status_code in (200, 201)
+    pid = r.json()["id"]
+    found = editor_client.get(f"/api/v1/persons?q={pid}").json()
+    assert any(p["id"] == pid for p in found)

@@ -96,14 +96,16 @@ class TreeService:
         if q:
             pattern = f"%{q.strip().lower()}%"
             # Функция cyrillic_lower уже зарегистрирована на engine (см. database.py)
-            stmt = stmt.where(
-                or_(
-                    func.cyrillic_lower(Person.first_name).like(pattern),
-                    func.cyrillic_lower(Person.last_name).like(pattern),
-                    func.cyrillic_lower(Person.middle_name).like(pattern),
-                    func.cyrillic_lower(Person.maiden_name).like(pattern),
-                )
-            )
+            conds = [
+                func.cyrillic_lower(Person.first_name).like(pattern),
+                func.cyrillic_lower(Person.last_name).like(pattern),
+                func.cyrillic_lower(Person.middle_name).like(pattern),
+                func.cyrillic_lower(Person.maiden_name).like(pattern),
+            ]
+            # поиск по числовому id тоже
+            if q.strip().isdigit():
+                conds.append(Person.id == int(q.strip()))
+            stmt = stmt.where(or_(*conds))
             return list(self.db.scalars(stmt.offset(skip).limit(limit)).all())
 
         # Без поиска: приоритетная семья из конфига идёт первой
