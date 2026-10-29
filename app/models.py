@@ -130,6 +130,39 @@ class PersonAccessLink(Base):
     person: Mapped["Person"] = relationship("Person")
 
 
+class NoteAccessRequest(Base):
+    """Запрос viewer'а на доступ к полным заметкам конкретного человека.
+
+    Админ подтверждает — после этого заметки этого человека не маскируются
+    для сессий, пришедших по персональной ссылке того же человека.
+    """
+
+    __tablename__ = "note_access_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # о ком запрос
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("persons.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # кто просит: person_id персональной ссылки (если есть) + имя
+    requester_person_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persons.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    requester_name: Mapped[str | None] = mapped_column(String(400))
+    message: Mapped[str | None] = mapped_column(String(1000))
+    # pending | approved | denied
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    person: Mapped["Person"] = relationship("Person", foreign_keys=[person_id])
+    requester: Mapped["Person | None"] = relationship(
+        "Person", foreign_keys=[requester_person_id]
+    )
+
+
 class Media(Base):
     """Фото/медиа, импортированные из Gramps или загруженные вручную."""
 

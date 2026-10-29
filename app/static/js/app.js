@@ -1003,6 +1003,110 @@ async function showDetail(id) {
   // ── История правок ──────────────────────────────────────────
   loadPersonHistory(id).catch(() => {});
   renderPersonLinkButton(id);
+  renderNoteAccessUI(id);
+}
+
+/** Запрос полных заметок (viewer) и одобрение (admin). */
+async function renderNoteAccessUI(id) {
+  let wrap = document.getElementById("note-access-ui");
+  if (wrap) wrap.remove();
+  wrap = document.createElement("div");
+  wrap.id = "note-access-ui";
+  const anchor =
+    document.getElementById("detail-link-btn") ||
+    document.getElementById("detail-history") ||
+    el.detailRel;
+  anchor?.insertAdjacentElement("afterend", wrap);
+
+  const apiCall = async (path, opts = {}) => {
+    const res = await fetch(`${API}${path}`, {
+      credentials: "include",
+      headers: opts.body ? { "Content-Type": "application/json" } : undefined,
+      ...opts,
+    });
+    if (!res.ok) {
+      let detail = res.status;
+      try { detail = (await res.json()).detail || detail; } catch {}
+      throw new Error(detail);
+    }
+    return res.json();
+  };
+
+  if (state.userRole === "viewer") {
+    // свои запросы по этому человеку
+    let mine = [];
+    try {
+      mine = await apiCall(`/persons/${id}/note-access-requests`);
+    } catch {}
+    const approved = mine.some((r) => r.status === "approved");
+    const pending = mine.some((r) => r.status === "pending");
+    if (approved) {
+      wrap.innerHTML = `<p style="font-size:.8rem;color:var(--text-muted);margin:.4rem 0">✅ Полные заметки этого человека доступны вам</p>`;
+      return;
+    }
+    if (pending) {
+      wrap.innerHTML = `<p style="font-size:.8rem;color:var(--text-muted);margin:.4rem 0">⏳ Запрос полных заметок отправлен, ждёт решения админа</p>`;
+      return;
+    }
+    const btn = document.createElement("button");
+    btn.className = "btn btn--ghost";
+    btn.style.cssText = "font-size:.85rem;margin:.4rem 0";
+    btn.textContent = "🔒 Запросить полные заметки";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        await apiCall(`/persons/${id}/note-access-request`, { method: "POST", body: "{}" });
+        toast("Запрос отправлен админу", "success");
+        wrap.innerHTML = `<p style="font-size:.8rem;color:var(--text-muted);margin:.4rem 0">⏳ Запрос отправлен, ждёт решения админа</p>`;
+      } catch (err) {
+        toast(`Не удалось отправить запрос: ${err.message}`, "error");
+        btn.disabled = false;
+      }
+    });
+    wrap.append(btn);
+    return;
+  }
+
+  if (state.isAdmin) {
+    // админ: ожидающие запросы по этому человеку
+    let pendingList = [];
+    try {
+      pendingList = await apiCall(`/persons/${id}/note-access-requests?status=pending`);
+    } catch {}
+    if (!pendingList.length) return;
+    const title = document.createElement("p");
+    title.style.cssText = "font-size:.8rem;font-weight:600;margin:.6rem 0 .3rem";
+    title.textContent = "Запросы доступа к заметкам:";
+    wrap.append(title);
+    for (const r of pendingList) {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;gap:.4rem;align-items:center;font-size:.8rem;margin:.25rem 0;flex-wrap:wrap";
+      const who = document.createElement("span");
+      who.textContent = `${r.requester_name || "viewer"}${r.message ? ` — «${r.message}»` : ""}`;
+      const ok = document.createElement("button");
+      ok.className = "btn btn-sm";
+      ok.textContent = "Разрешить";
+      const no = document.createElement("button");
+      no.className = "btn btn-sm btn--ghost";
+      no.textContent = "Отклонить";
+      ok.addEventListener("click", async () => {
+        try {
+          await apiCall(`/persons/note-access-requests/${r.id}/decision?decision=approve`, { method: "POST" });
+          toast("Доступ разрешён", "success");
+          row.remove();
+        } catch (err) { toast(err.message, "error"); }
+      });
+      no.addEventListener("click", async () => {
+        try {
+          await apiCall(`/persons/note-access-requests/${r.id}/decision?decision=deny`, { method: "POST" });
+          toast("Запрос отклонён", "success");
+          row.remove();
+        } catch (err) { toast(err.message, "error"); }
+      });
+      row.append(who, ok, no);
+      wrap.append(row);
+    }
+  }
 }
 
 const HISTORY_FIELD_LABELS = {

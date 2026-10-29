@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 import logging
 
@@ -16,6 +18,12 @@ from app.schemas import (
     PersonUpdate,
 )
 from app.services.tree_service import TreeService
+from app.services.privacy import (
+    mask_person_read,
+    mask_revisions,
+    viewer_allowed_ids as _viewer_allowed_ids,
+)
+from app.models import NoteAccessRequest
 
 router = APIRouter(prefix="/persons", tags=["persons"])
 logger = logging.getLogger(__name__)
@@ -50,15 +58,30 @@ def list_persons(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=1000),
     service: TreeService = Depends(get_service),
+    user: dict = Depends(require_jwt_token),
+    db: Session = Depends(get_db),
 ) -> list[PersonRead]:
     logger.debug("list_persons: q=%s skip=%d limit=%d", q or "", skip, limit)
-    return service.list_persons(q=q, family=family, skip=skip, limit=limit)
+    items = service.list_persons(q=q, family=family, skip=skip, limit=limit)
+    if user.get("role") == "viewer":
+        allowed = _viewer_allowed_ids(db, user)
+        for p in items:
+            mask_person_read(p, allowed)
+    return items
 
 
 @router.get("/{person_id}", response_model=PersonRead, dependencies=[Depends(require_jwt_token)])
-def get_person(person_id: int, service: TreeService = Depends(get_service)) -> PersonRead:
+def get_person(
+    person_id: int,
+    service: TreeService = Depends(get_service),
+    user: dict = Depends(require_jwt_token),
+    db: Session = Depends(get_db),
+) -> PersonRead:
     logger.debug("get_person: id=%d", person_id)
-    return service.get_person(person_id)
+    person = service.get_person(person_id)
+    if user.get("role") == "viewer":
+        mask_person_read(person, _viewer_allowed_ids(db, user))
+    return person
 
 
 @router.post("", response_model=PersonRead, status_code=201, dependencies=[Depends(require_editor_token)])
@@ -101,9 +124,124 @@ def person_history(
     person_id: int,
     limit: int = Query(100, ge=1, le=500),
     service: TreeService = Depends(get_service),
+    user: dict = Depends(require_jwt_token),
 ) -> list[PersonRevisionRead]:
     """История правок человека (create/update/delete с diff полей)."""
-    return service.get_person_history(person_id, limit=limit)
+    items = service.get_person_history(person_id, limit=limit)
+    if user.get("role") == "viewer":
+        mask_revisions(items)
+    return items
+
+
+# ── Запросы доступа к полным заметкам (viewer → admin) ─────────────────────
+
+
+class NoteAccessRequestCreate(BaseModel):
+    message: str | None = Field(None, max_length=1000)
+
+
+class NoteAccessRequestRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    person_id: int
+    requester_name: str | None = None
+    requester_person_id: int | None = None
+    message: str | None = None
+    status: str
+    created_at: datetime
+
+
+@router.post(
+    "/{person_id}/note-access-request",
+    status_code=201,
+    dependencies=[Depends(require_jwt_token)],
+)
+def create_note_access_request(
+    person_id: int,
+    data: NoteAccessRequestCreate | None = None,
+    user: dict = Depends(require_jwt_token),
+    db: Session = Depends(get_db),
+) -> NoteAccessRequestRead:
+    """Viewer просит админа открыть полные заметки конкретного человека."""
+    # человек должен существовать
+    db.query(Person).filter(Person.id == person_id).one()
+    requester_pid = user.get("person_id")
+    requester_name = user.get("actor") or (
+        "viewer по персональной ссылке" if requester_pid else "viewer"
+    )
+    # не плодим дубликаты: тот же проситель о том же человеке в pending/approved
+    dup = (
+        db.query(NoteAccessRequest)
+        .filter(
+            NoteAccessRequest.person_id == person_id,
+            NoteAccessRequest.requester_person_id == requester_pid,
+            NoteAccessRequest.status.in_(("pending", "approved")),
+        )
+        .first()
+    )
+    if dup is not None:
+        raise HTTPException(status_code=409, detail=f"Запрос уже существует (статус: {dup.status})")
+    req = NoteAccessRequest(
+        person_id=person_id,
+        requester_person_id=requester_pid,
+        requester_name=requester_name,
+        message=(data.message if data and data.message else None),
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return req
+
+
+@router.get(
+    "/{person_id}/note-access-requests",
+    response_model=list[NoteAccessRequestRead],
+    dependencies=[Depends(require_jwt_token)],
+)
+def list_note_access_requests(
+    person_id: int,
+    status: str | None = Query(None, description="Фильтр: pending/approved/denied"),
+    user: dict = Depends(require_jwt_token),
+    db: Session = Depends(get_db),
+) -> list[NoteAccessRequestRead]:
+    """Список запросов по человеку (админ видит все, проситель — свои)."""
+    q = db.query(NoteAccessRequest).filter(NoteAccessRequest.person_id == person_id)
+    if status:
+        q = q.filter(NoteAccessRequest.status == status)
+    items = q.order_by(NoteAccessRequest.created_at.desc()).all()
+    if user.get("role") == "editor" and user.get("person_id") is None:
+        return items  # админ
+    # не-админ видит только собственные запросы
+    return [
+        r
+        for r in items
+        if r.requester_person_id == user.get("person_id")
+        or (r.requester_person_id is None and user.get("person_id") is None)
+    ]
+
+
+@router.post(
+    "/note-access-requests/{request_id}/decision",
+    response_model=NoteAccessRequestRead,
+    dependencies=[Depends(require_admin)],
+)
+def decide_note_access_request(
+    request_id: int,
+    decision: str = Query(..., description="approve или deny"),
+    db: Session = Depends(get_db),
+) -> NoteAccessRequestRead:
+    """Админ подтверждает или отклоняет запрос."""
+    if decision not in ("approve", "deny"):
+        raise HTTPException(status_code=422, detail="decision должен быть approve или deny")
+    req = db.query(NoteAccessRequest).filter(NoteAccessRequest.id == request_id).one_or_none()
+    if req is None:
+        raise HTTPException(status_code=404, detail="Запрос не найден")
+    req.status = "approved" if decision == "approve" else "denied"
+    req.decided_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(req)
+    return req
 
 
 # ── Персональные ссылки доступа ────────────────────────────────────────────

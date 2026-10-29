@@ -645,3 +645,75 @@ def test_gramps_names_unknown_primary():
     assert names["last_name"] == "Кузнецова"
     assert names["maiden_name"] == "Яковлева"
     assert names["first_name"] == "Светлана"
+
+
+# ── Маскировка заметок для viewer + запросы доступа ────────────────────────
+
+NOTE_WITH_PERSONAL = "Тел: +7 912 345 67 89. Email: a@b.ru. Домофон 1495. Просто биография."
+
+
+def _mk_person_with_note(client):
+    r = client.post(
+        "/api/v1/persons",
+        json={"first_name": "Нота", "last_name": "Проверка", "notes": NOTE_WITH_PERSONAL},
+    )
+    assert r.status_code in (200, 201)
+    return r.json()["id"]
+
+
+def test_viewer_notes_masked_editor_full(app_env, viewer_client, editor_client):
+    from app.config import settings
+
+    pid = _mk_person_with_note(editor_client)
+    # viewer_client и editor_client делят один клиент: релогинимся явно
+    app_env.get(f"/api/v1/auth/link/{settings.view_token}", follow_redirects=False)
+    v = app_env.get(f"/api/v1/persons/{pid}").json()
+    assert v["notes"] != NOTE_WITH_PERSONAL
+    assert "[телефон скрыт]" in v["notes"]
+    assert "[e-mail скрыт]" in v["notes"]
+    t = app_env.get(f"/api/v1/tree/{pid}").json()
+    assert t["tree"]["person"]["notes"] != NOTE_WITH_PERSONAL
+    # editor видит полностью
+    app_env.get(f"/api/v1/auth/link/{settings.edit_token}", follow_redirects=False)
+    e = app_env.get(f"/api/v1/persons/{pid}").json()
+    assert e["notes"] == NOTE_WITH_PERSONAL
+
+
+def test_note_access_request_flow(app_env, viewer_client, editor_client):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    """Viewer с персональной ссылкой запрашивает доступ; админ одобряет — заметки открываются."""
+    pid = _mk_person_with_note(editor_client)
+    # персональная viewer-ссылка для человека pid (создаёт админ)
+    r = editor_client.post(f"/api/v1/persons/{pid}/access-link", json={"role": "viewer"})
+    assert r.status_code in (200, 201)
+    link = r.json()["url"].rsplit("/", 1)[-1]
+    with TestClient(app, follow_redirects=False) as link_client:
+        resp = link_client.get(f"/api/v1/auth/link/{link}", follow_redirects=False)
+        assert resp.status_code in (302, 303)
+        # viewer по персональной ссылке
+        notes_resp = link_client.get(f"/api/v1/persons/{pid}")
+        assert "[телефон скрыт]" in notes_resp.json()["notes"]
+        # запрос
+        rr = link_client.post(f"/api/v1/persons/{pid}/note-access-request", json={})
+        assert rr.status_code in (200, 201)
+        req_id = rr.json()["id"]
+        # дубль отклоняется
+        dup = link_client.post(f"/api/v1/persons/{pid}/note-access-request", json={})
+        assert dup.status_code == 409
+        # админ видит pending
+        lst = editor_client.get(f"/api/v1/persons/{pid}/note-access-requests?status=pending")
+        assert any(x["id"] == req_id for x in lst.json())
+        # одобряем
+        dec = editor_client.post(f"/api/v1/persons/note-access-requests/{req_id}/decision?decision=approve")
+        assert dec.status_code == 200
+        # теперь заметки полные
+        notes2 = link_client.get(f"/api/v1/persons/{pid}").json()["notes"]
+        assert notes2 == NOTE_WITH_PERSONAL
+        # но другие люди по-прежнему маскируются
+        other = editor_client.post(
+            "/api/v1/persons",
+            json={"first_name": "Другой", "last_name": "Человек", "notes": NOTE_WITH_PERSONAL},
+        ).json()["id"]
+        other_notes = link_client.get(f"/api/v1/persons/{other}").json()["notes"]
+        assert "[телефон скрыт]" in other_notes
