@@ -717,3 +717,13 @@ def test_note_access_request_flow(app_env, viewer_client, editor_client):
         ).json()["id"]
         other_notes = link_client.get(f"/api/v1/persons/{other}").json()["notes"]
         assert "[телефон скрыт]" in other_notes
+
+
+def test_mask_no_false_positives():
+    """Обычные слова (дерево, дети, дома) не маскируются как адреса."""
+    from app.services.privacy import mask_notes
+
+    text = "Семейное дерево MD. Дети и внуки. Дома жили в Иволгинске. род. 05.10.1948"
+    assert mask_notes(text) == text
+    masked = mask_notes("живёт ул. Пушкина 4 кв. 7")
+    assert "[адрес скрыт]" in masked
