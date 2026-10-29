@@ -842,7 +842,11 @@ function cardHtml(entry) {
     entry.spouses && entry.spouses.length
       ? `<div class="spouses">♥ ${entry.spouses.map((s) => escapeHtml(s.full_name)).join(", ")}</div>`
       : "";
-      const noteText = (p.notes || "").replace(/\s+/g, " ").trim();
+      const noteText = (p.notes || "")
+        .replace(/Gramps ID:\s*\S+/gi, "")
+        .replace(/\s+/g, " ")
+        .replace(/^[\s,;.—]+/, "")
+        .trim();
       const notesHtml =
       noteText && state.showNotes
         ? `<div class="card-note" title="${escapeHtml(noteText)}">${escapeHtml(
