@@ -971,6 +971,26 @@ async function showDetail(id) {
     photoBlock.classList.add("hidden");
   }
 
+  // ── заметки в панели ────────────────────────────────────────
+  let notesBlock = el.detail.querySelector(".detail-notes");
+  if (!notesBlock) {
+    notesBlock = document.createElement("div");
+    notesBlock.className = "detail-notes";
+    photoBlock.insertAdjacentElement("afterend", notesBlock);
+  }
+  const detailNoteText = (person.notes || "")
+    .replace(/Gramps ID:\s*\S+/gi, "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s,;.—]+/, "")
+    .trim();
+  if (detailNoteText) {
+    notesBlock.textContent = detailNoteText;
+    notesBlock.classList.remove("hidden");
+  } else {
+    notesBlock.textContent = "";
+    notesBlock.classList.add("hidden");
+  }
+
   // ── все фото человека (галерея), кроме главного ───────────────
   loadPersonPhotos(id, photoBlock).catch(() => {});
 

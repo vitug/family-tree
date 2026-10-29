@@ -843,6 +843,19 @@ body::before {
   word-break: break-word;
 }
 
+.detail-notes {
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+  border-radius: 0 6px 6px 0;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .btn.btn-active {
   border-color: var(--accent, #4a7dff);
   color: var(--accent, #4a7dff);
