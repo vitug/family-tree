@@ -1681,6 +1681,47 @@ function bindEvents() {
     fillRelationSelects();
     openModal("modal-path");
   });
+
+  // PWA: явная кнопка установки приложения
+  let deferredInstallPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    const btn = $("#btn-install-app");
+    if (btn) btn.hidden = false;
+  });
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    const btn = $("#btn-install-app");
+    if (btn) btn.hidden = true;
+    toast("Приложение установлено 🌳", "success");
+  });
+  // iOS: beforeinstallprompt не бывает — показываем кнопку сразу (клик = инструкция)
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) {
+    const btn = $("#btn-install-app");
+    if (btn) btn.hidden = false;
+  }
+  $("#btn-install-app")?.addEventListener("click", async () => {
+    closeHeaderMenu();
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      try {
+        const res = await deferredInstallPrompt.userChoice;
+        if (res && res.outcome === "dismissed") return;
+      } finally {
+        deferredInstallPrompt = null;
+      }
+      return;
+    }
+    // iOS Safari: beforeinstallprompt не бывает — инструкция
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    toast(
+      isIOS
+        ? "На iPhone/iPad: кнопка «Поделиться» → «На экран “Домой”»"
+        : "Приложение уже установлено или недоступно для установки в этом браузере",
+      "info",
+    );
+  });
   $("#btn-back-overview")?.addEventListener("click", async () => {
     state.selectedId = null;
     hideDetailPanel();

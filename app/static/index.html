@@ -8,6 +8,22 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Семейное дерево</title>
   <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-title" content="Дерево" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <script>
+    // PWA: регистрация service worker (для установки как приложение)
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker
+          .register((window.ROOT_PATH || "") + "/sw.js")
+          .catch(() => {});
+      });
+    }
+  </script>
+
 </head>
 <body>
   <div class="app">
@@ -39,6 +55,7 @@
             <button class="header-menu-item" id="btn-path" type="button" role="menuitem">Путь родства</button>
             <button class="header-menu-item" id="btn-import" type="button" role="menuitem">Импорт Gramps</button>
             <button class="header-menu-item" id="btn-export-obsidian" type="button" role="menuitem">Экспорт Obsidian</button>
+            <button class="header-menu-item" id="btn-install-app" type="button" role="menuitem" hidden>Установить приложение</button>
           </div>
         </div>
 

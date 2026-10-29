@@ -8,7 +8,7 @@ from typing import AsyncGenerator
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -196,6 +196,8 @@ def _render_index() -> FileResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     # абсолютные ссылки на статику → с префиксом
     html = html.replace('"/static/', f'"{root}/static/')
+    # PWA: manifest и service worker — тоже с префиксом двери
+    html = html.replace('"/manifest.webmanifest"', f'"{root}/manifest.webmanifest"')
     # версионирование статики: браузер не держит старый app.js/styles.css
     v = str(int((STATIC_DIR / "js" / "app.js").stat().st_mtime))
     html = html.replace('app.js"', f'app.js?v={v}"').replace('styles.css"', f'styles.css?v={v}"')
@@ -215,6 +217,68 @@ if settings.protect_api_docs:
     async def protected_docs(_auth: bool = Depends(require_docs_auth)):
         # При наличии JWT отдаём SPA; Swagger UI при protect_api_docs отключён в конструкторе
         return _render_index()
+
+
+# ── PWA (установка как приложение) ─────────────────────────────────────────
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def pwa_manifest() -> JSONResponse:
+    """Web App Manifest: start_url/scope/icons — с учётом root_path (nginx-дверь)."""
+    root = settings.root_path
+    manifest = {
+        "name": "Семейное дерево",
+        "short_name": "Дерево",
+        "description": "Генеалогическое дерево семьи",
+        "lang": "ru",
+        "start_url": f"{root}/",
+        "scope": f"{root}/",
+        "display": "standalone",
+        "orientation": "any",
+        "background_color": "#1a222d",
+        "theme_color": "#1a222d",
+        "icons": [
+            {
+                "src": f"{root}/static/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": f"{root}/static/icons/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": f"{root}/static/icons/icon-maskable-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+            {
+                "src": f"{root}/static/icons/icon-maskable-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+        ],
+    }
+    return JSONResponse(
+        manifest,
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/sw.js", include_in_schema=False)
+def pwa_service_worker() -> FileResponse:
+    """Service worker (pass-through): нужен браузеру для установки PWA."""
+    return FileResponse(
+        STATIC_DIR / "sw.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 # ── Системные роуты ────────────────────────────────────────────────────────

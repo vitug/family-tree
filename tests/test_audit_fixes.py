@@ -235,7 +235,9 @@ def test_index_injects_root_path(app_env, monkeypatch):
 def test_index_without_root_path_plain(app_env):
     resp = app_env.get("/")
     assert resp.status_code == 200
-    assert "window.ROOT_PATH" not in resp.text
+    # инъекции значения ROOT_PATH быть не должно (сам index ссылается на
+    # window.ROOT_PATH в скрипте регистрации service worker — это норма)
+    assert 'window.ROOT_PATH="' not in resp.text
 
 
 def test_root_path_validator():
@@ -727,3 +729,47 @@ def test_mask_no_false_positives():
     assert mask_notes(text) == text
     masked = mask_notes("живёт ул. Пушкина 4 кв. 7")
     assert "[адрес скрыт]" in masked
+
+
+# ── PWA: установка сайта как приложение ─────────────────────────────────────
+
+
+def test_pwa_manifest(app_env):
+    r = app_env.get("/manifest.webmanifest")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/manifest+json")
+    m = r.json()
+    assert m["name"] == "Семейное дерево"
+    assert m["start_url"] == "/"
+    assert m["scope"] == "/"
+    assert m["display"] == "standalone"
+    sizes = {i["sizes"] for i in m["icons"]}
+    assert "192x192" in sizes and "512x512" in sizes
+    assert any(i.get("purpose") == "maskable" for i in m["icons"])
+    # иконки реально отдаются
+    for i in m["icons"]:
+        ri = app_env.get(i["src"])
+        assert ri.status_code == 200, i["src"]
+
+
+def test_pwa_sw(app_env):
+    r = app_env.get("/sw.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+    assert r.headers["cache-control"] == "no-cache"
+    assert "fetch" in r.text
+
+
+def test_pwa_index_links_and_root_path(app_env, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "root_path", "/door")
+    r = app_env.get("/")
+    assert r.status_code == 200
+    html = r.text
+    # manifest-ссылка с префиксом двери
+    assert 'href="/door/manifest.webmanifest"' in html
+    # ROOT_PATH для регистрации service worker
+    assert 'window.ROOT_PATH="/door"' in html
+    # service worker доступен по префиксному пути (nginx проксирует без URI-части)
+    assert app_env.get("/sw.js").status_code == 200
