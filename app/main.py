@@ -225,7 +225,7 @@ if settings.protect_api_docs:
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def pwa_manifest() -> JSONResponse:
     """Web App Manifest: start_url/scope/icons — с учётом root_path (nginx-дверь)."""
-    root = settings.root_path
+    root = (settings.root_path or "").rstrip("/")
     manifest = {
         "name": "Семейное дерево",
         "short_name": "Дерево",

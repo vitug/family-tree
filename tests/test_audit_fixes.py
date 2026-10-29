@@ -773,3 +773,14 @@ def test_pwa_index_links_and_root_path(app_env, monkeypatch):
     assert 'window.ROOT_PATH="/door"' in html
     # service worker доступен по префиксному пути (nginx проксирует без URI-части)
     assert app_env.get("/sw.js").status_code == 200
+
+
+def test_pwa_manifest_root_path_trailing_slash(app_env, monkeypatch):
+    """root_path с завершающим слэшем (боевой формат двери) не должен давать // в start_url."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "root_path", "/door/")
+    m = app_env.get("/manifest.webmanifest").json()
+    assert m["start_url"] == "/door/"
+    assert m["scope"] == "/door/"
+    assert m["icons"][0]["src"] == "/door/static/icons/icon-192.png"
