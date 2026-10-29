@@ -277,8 +277,8 @@ const el = {
   detailSub: $("#detail-sub"),
   detailRel: $("#detail-relatives"),
   toolbarHint: $("#toolbar-hint"),
-  depthUp: $("#depth-up"),
-  depthDown: $("#depth-down"),
+  depthUpValue: $("#depth-up-value"),
+  depthDownValue: $("#depth-down-value"),
   toasts: $("#toasts"),
   headerMore: $("#btn-header-more"),
   headerMenuPanel: $("#header-menu-panel"),
@@ -758,8 +758,7 @@ async function renderMainView() {
   el.pathResult.classList.add("hidden");
   el.canvas.classList.remove("hidden");
 
-  state.depthUp = Number(el.depthUp.value) || 0;
-  state.depthDown = Number(el.depthDown.value) || 0;
+  // state.depthUp / state.depthDown остаются дефолтными (2/2)
 
   if (state.view === "tree") {
     try {
@@ -1556,12 +1555,30 @@ function bindEvents() {
     if (state.selectedId) renderMainView().catch((e) => toast(e.message, "error"));
   });
 
-  el.depthUp?.addEventListener("change", () => {
-    if (state.selectedId && state.view === "tree") renderMainView();
-  });
-  el.depthDown?.addEventListener("change", () => {
-    if (state.selectedId && state.view === "tree") renderMainView();
-  });
+  function updateDepthLabels() {
+    if (el.depthUpValue) el.depthUpValue.textContent = `Вверх: ${state.depthUp}`;
+    if (el.depthDownValue) el.depthDownValue.textContent = `Вниз: ${state.depthDown}`;
+  }
+  updateDepthLabels();
+
+  function bindDepthStepper(dir) {
+    const minus = $(`#depth-${dir}-minus`);
+    const plus = $(`#depth-${dir}-plus`);
+    const apply = (delta) => {
+      const key = dir === "up" ? "depthUp" : "depthDown";
+      const v = Math.min(10, Math.max(0, state[key] + delta));
+      if (v === state[key]) return;
+      state[key] = v;
+      updateDepthLabels();
+      if (state.selectedId && state.view === "tree") {
+        renderMainView().catch((e) => toast(e.message, "error"));
+      }
+    };
+    minus?.addEventListener("click", () => apply(-1));
+    plus?.addEventListener("click", () => apply(1));
+  }
+  bindDepthStepper("up");
+  bindDepthStepper("down");
 
   $$("#view-tabs .tab").forEach((tab) => {
     tab.addEventListener("click", () => {

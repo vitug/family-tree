@@ -76,14 +76,16 @@
         </div>
         <div class="toolbar-row toolbar-row-controls">
           <button class="btn btn-sm btn-ghost" id="btn-back-overview" type="button" hidden>← К списку</button>
-          <label class="depth-label">
-            Вверх
-            <input class="input depth-input" id="depth-up" type="number" min="0" max="10" value="2" inputmode="numeric" />
-          </label>
-          <label class="depth-label">
-            Вниз
-            <input class="input depth-input" id="depth-down" type="number" min="0" max="10" value="2" inputmode="numeric" />
-          </label>
+          <div class="depth-stepper">
+            <button class="btn btn-sm btn-ghost depth-btn" id="depth-up-minus" type="button" aria-label="Меньше поколений вверх">−</button>
+            <span class="depth-value" id="depth-up-value">Вверх: 2</span>
+            <button class="btn btn-sm btn-ghost depth-btn" id="depth-up-plus" type="button" aria-label="Больше поколений вверх">+</button>
+          </div>
+          <div class="depth-stepper">
+            <button class="btn btn-sm btn-ghost depth-btn" id="depth-down-minus" type="button" aria-label="Меньше поколений вниз">−</button>
+            <span class="depth-value" id="depth-down-value">Вниз: 2</span>
+            <button class="btn btn-sm btn-ghost depth-btn" id="depth-down-plus" type="button" aria-label="Больше поколений вниз">+</button>
+          </div>
           <button class="btn btn-sm" id="btn-refresh" type="button">Обновить</button>
         </div>
       </div>
