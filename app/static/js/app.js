@@ -251,6 +251,7 @@ const state = {
   view: "tree", // tree | relatives | path
   depthUp: 2,
   depthDown: 2,
+  showNotes: true,
   editingPersonId: null, // null = create, number = edit
   isAuthenticated: false,
   userRole: null, // "viewer" or "editor"
@@ -841,12 +842,20 @@ function cardHtml(entry) {
     entry.spouses && entry.spouses.length
       ? `<div class="spouses">♥ ${entry.spouses.map((s) => escapeHtml(s.full_name)).join(", ")}</div>`
       : "";
-  return `
+      const noteText = (p.notes || "").replace(/\s+/g, " ").trim();
+      const notesHtml =
+      noteText && state.showNotes
+        ? `<div class="card-note" title="${escapeHtml(noteText)}">${escapeHtml(
+            noteText.length > 80 ? noteText.slice(0, 80) + "…" : noteText
+          )}</div>`
+        : "";
+      return `
     <div class="person-card ${rootCls}" data-id="${p.id}">
       ${avatarHtml(p, "card-avatar")}
       <div class="card-name">${escapeHtml(p.full_name)}</div>
       <div class="card-dates">${escapeHtml(formatDates(p))}</div>
       <div class="card-id">#${p.id}</div>
+      ${notesHtml}
       ${spouses}
     </div>`;
 }
@@ -1549,6 +1558,21 @@ function bindEvents() {
     hideDetailPanel();
     history.replaceState(null, "", location.pathname + location.hash);
     await renderMainView();
+  });
+
+  const notesToggle = $("#btn-toggle-notes");
+  const syncNotesToggle = () => {
+    if (!notesToggle) return;
+    notesToggle.classList.toggle("btn-active", state.showNotes);
+    notesToggle.setAttribute("aria-pressed", String(state.showNotes));
+  };
+  syncNotesToggle();
+  notesToggle?.addEventListener("click", () => {
+    state.showNotes = !state.showNotes;
+    syncNotesToggle();
+    if (state.selectedId && state.view === "tree") {
+      renderMainView().catch((e) => toast(e.message, "error"));
+    }
   });
 
   $("#btn-refresh")?.addEventListener("click", () => {

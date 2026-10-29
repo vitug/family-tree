@@ -408,6 +408,7 @@ class TreeService:
             birth_date=person.birth_date,
             death_date=person.death_date,
             photo_url=person.photo_url,
+            notes=person.notes,
             relation_to_root=relation,
             generation=generation,
         )

@@ -830,6 +830,25 @@ body::before {
   margin-top: 0.15rem;
 }
 
+.person-card .card-note {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+  padding: 0.25rem 0.4rem;
+  border-left: 2px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+  border-radius: 0 4px 4px 0;
+  line-height: 1.35;
+  text-align: left;
+  word-break: break-word;
+}
+
+.btn.btn-active {
+  border-color: var(--accent, #4a7dff);
+  color: var(--accent, #4a7dff);
+  background: color-mix(in srgb, var(--accent, #4a7dff) 12%, transparent);
+}
+
 .person-card .card-dates {
   font-size: 0.75rem;
   color: var(--text-muted);

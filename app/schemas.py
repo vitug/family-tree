@@ -106,6 +106,7 @@ class FamilyMember(BaseModel):
     birth_date: date | None
     death_date: date | None
     photo_url: str | None = None
+    notes: str | None = None
     relation_to_root: str | None = None
     generation: int = 0
 
