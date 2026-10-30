@@ -30,6 +30,8 @@ os.environ["FAMILY_TREE_TRUST_PROXY"] = "false"
 os.environ["FAMILY_TREE_PRIORITY_FAMILY"] = ""
 os.environ["FAMILY_TREE_VIEW_FOCUS_PERSON_ID"] = "0"
 os.environ["FAMILY_TREE_VIEW_FAMILY"] = ""
+# боевой .env может задавать длинную сессию (30 дней) — тестам нужен детерминизм
+os.environ["FAMILY_TREE_JWT_ACCESS_TOKEN_EXPIRE_HOURS"] = "24"
 
 
 @pytest.fixture()
