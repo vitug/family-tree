@@ -10,6 +10,7 @@ const jwtManager = {
   tokenExpiry: null,
   userRole: null, // "viewer" | "editor"
   _refreshTimer: null,
+  _slidOnLoad: false,
 
   /** Убрать старые небезопасные ключи localStorage (миграция). */
   _purgeLegacyStorage() {
@@ -142,11 +143,17 @@ const jwtManager = {
   },
 
   async refreshTokenIfNeeded() {
-    if (!this.isTokenValid() || this.tokenExpiry - Date.now() < 300000) {
-      return await this.refreshToken();
-    }
-    return true;
-  },
+      if (!this.isTokenValid() || this.tokenExpiry - Date.now() < 300000) {
+        return await this.refreshToken();
+      }
+      /* Первый вызов за запуск приложения — сдвигаем окно сессии на полный срок:
+         иначе короткие визиты (открыл-закрыл) не продлевают cookie. */
+      if (!this._slidOnLoad) {
+        this._slidOnLoad = true;
+        return await this.refreshToken();
+      }
+      return true;
+    },
 };
 
 /** Открыть модалку входа; resolve(true/false) после попытки. */
