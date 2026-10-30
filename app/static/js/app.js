@@ -46,6 +46,9 @@ const jwtManager = {
         state.isAuthenticated = this.isTokenValid();
       }
       this._scheduleRefresh();
+      /* Короткий визит тоже продлевает сессию: сдвиг окна при каждом запуске
+         (refreshTokenIfNeeded сработает один раз за запуск — флаг _slidOnLoad) */
+      this.refreshTokenIfNeeded().catch(() => {});
       return this.isTokenValid();
     } catch {
       this.clearSession(false);
