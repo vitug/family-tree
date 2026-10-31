@@ -979,3 +979,76 @@ def test_validator_full_tree_report(editor_client):
     with SessionLocal() as db:
         rep2 = validate_tree(db)
     assert rep2["errors"] == []
+
+
+# ── Поиск связи между людьми (connection_finder) ────────────────────────────
+
+
+def _family(editor_client):
+    """Дед-бабка → отец+тётя → я; тётя — мать двоюродной; + жена."""
+    ded = _mk(editor_client, "Дед", "Иванов", birth="1930-01-01")
+    bab = _mk(editor_client, "Баб", "Иванова", gender="female", birth="1932-01-01")
+    ot = _mk(editor_client, "Отец", "Иванов", birth="1955-01-01")
+    tet = _mk(editor_client, "Тётя", "Иванова", gender="female", birth="1958-01-01")
+    me = _mk(editor_client, "Я", "Иванов", birth="1980-01-01")
+    cous = _mk(editor_client, "Куз", "Иванова", gender="female", birth="1983-01-01")
+    wife = _mk(editor_client, "Жена", "Петрова", gender="female", birth="1982-01-01")
+    pairs = [
+        (ded["id"], ot["id"]), (bab["id"], ot["id"]),
+        (ded["id"], tet["id"]), (bab["id"], tet["id"]),
+        (ot["id"], me["id"]),
+        (tet["id"], cous["id"]),
+    ]
+    for a, b in pairs:
+        assert _link(editor_client, a, b).status_code in (200, 201)
+    assert _link(editor_client, me["id"], wife["id"], "spouse_of").status_code in (200, 201)
+    return dict(ded=ded, bab=bab, ot=ot, tet=tet, me=me, cous=cous, wife=wife)
+
+
+def test_connection_ancestor_descendant(editor_client):
+    f = _family(editor_client)
+
+    def conn(a, b):
+        r = editor_client.get(f'/api/v1/persons/{a}/connection/{b}')
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    r = conn(f["me"]["id"], f["ded"]["id"])
+    assert r["found"] and r["term"] == "дедушка"
+    r = conn(f["ded"]["id"], f["me"]["id"])
+    assert r["term"] == "внук"
+    r = conn(f["me"]["id"], f["bab"]["id"])
+    assert r["term"] == "бабушка"
+    r = conn(f["me"]["id"], f["ot"]["id"])
+    assert r["term"] == "отец"
+
+
+def test_connection_collateral_and_spouse(editor_client):
+    f = _family(editor_client)
+
+    def conn(a, b):
+        r = editor_client.get(f'/api/v1/persons/{a}/connection/{b}')
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    r = conn(f["me"]["id"], f["tet"]["id"])
+    assert r["term"] == "тётя"
+    r = conn(f["me"]["id"], f["cous"]["id"])
+    assert r["term"] == "двоюродная сестра"
+    r = conn(f["me"]["id"], f["wife"]["id"])
+    assert r["term"] == "жена"
+    # обратное направление тоже работает
+    r = conn(f["cous"]["id"], f["me"]["id"])
+    assert r["term"] == "двоюродный брат"
+
+
+def test_connection_not_found_and_self(editor_client):
+    f = _family(editor_client)
+    stranger = _mk(editor_client, "Никто", "Одиноков", birth="1990-01-01")
+    r = editor_client.get(f'/api/v1/persons/{f["me"]["id"]}/connection/{stranger["id"]}')
+    assert r.status_code == 200
+    assert r.json()["found"] is False
+    r = editor_client.get(f'/api/v1/persons/{f["me"]["id"]}/connection/{f["me"]["id"]}')
+    assert r.status_code == 400
+    r = editor_client.get(f'/api/v1/persons/{f["me"]["id"]}/connection/99999')
+    assert r.status_code == 404

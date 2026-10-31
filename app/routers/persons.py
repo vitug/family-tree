@@ -84,6 +84,33 @@ def get_person(
     return person
 
 
+@router.get(
+    "/{person_id}/connection/{target_id}",
+    dependencies=[Depends(require_jwt_token)],
+)
+def get_connection(
+    person_id: int,
+    target_id: int,
+    service: TreeService = Depends(get_service),
+) -> dict:
+    """Поиск связи между двумя людьми по косвенным данным.
+
+    Кратчайший путь по графу родства + человеческое название степени
+    («двоюродная сестра», «прадедушка», «муж тёти»...).
+    """
+    from fastapi import HTTPException, status as st
+
+    from app.services.connection_finder import find_connection
+
+    logger.debug("get_connection: %s -> %s", person_id, target_id)
+    try:
+        return find_connection(service, person_id, target_id)
+    except ValueError as e:
+        raise HTTPException(st.HTTP_400_BAD_REQUEST, str(e))
+    except LookupError as e:
+        raise HTTPException(st.HTTP_404_NOT_FOUND, str(e))
+
+
 @router.post("", response_model=PersonRead, status_code=201, dependencies=[Depends(require_editor_token)])
 def create_person(data: PersonCreate, service: TreeService = Depends(get_service)) -> PersonRead:
     logger.info("Create person: %s %s", data.first_name, data.last_name or "")
