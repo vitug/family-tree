@@ -1859,3 +1859,26 @@ body::before {
     margin-top: 44px;
   }
 }
+
+/* Подтверждение выхода из приложения (кнопка «назад» в списке) */
+.exit-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.exit-confirm {
+  background: var(--bg-panel, #232b36);
+  border-radius: 12px;
+  padding: 1.1rem 1.3rem;
+  max-width: 20rem;
+  margin: 1rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+.exit-confirm-title { margin: 0 0 0.9rem; font-weight: 600; }
+.exit-confirm-btns { display: flex; gap: 0.6rem; justify-content: center; }
+.exit-confirm-btns .btn { min-width: 7rem; }

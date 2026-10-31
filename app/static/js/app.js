@@ -697,9 +697,66 @@ function fillRelationSelects() {
   personOptions($("#path-to"));
 }
 
+// ── Кнопка «назад» (PWA): шаг назад по приложению, выход — с подтверждением ──
+let navGuardSeq = 0;
+function pushNavGuard() {
+  // Дополнительная запись в history: «назад» сначала отрабатывает приложение,
+  // и только за пределами стека — закрывает PWA.
+  history.pushState({ ftNav: ++navGuardSeq }, "", location.pathname + location.search + location.hash);
+}
+function isDetailVisible() {
+  return el.detail && !el.detail.classList.contains("hidden");
+}
+function confirmExitApp() {
+  // confirm() в standalone-PWA ненадёжен — свой оверлей с кнопками.
+  return new Promise((resolve) => {
+    const ov = document.createElement("div");
+    ov.className = "exit-confirm-overlay";
+    ov.innerHTML = `
+      <div class="exit-confirm" role="alertdialog" aria-label="Выход из приложения">
+        <p class="exit-confirm-title">Выйти из приложения?</p>
+        <div class="exit-confirm-btns">
+          <button type="button" class="btn btn-sm" data-act="stay">Остаться</button>
+          <button type="button" class="btn btn-sm btn-danger" data-act="exit">Выйти</button>
+        </div>
+      </div>`;
+    const done = (ok) => { ov.remove(); resolve(ok); };
+    ov.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-act]");
+      if (btn) done(btn.dataset.act === "exit");
+      else if (e.target === ov) done(false);
+    });
+    document.body.appendChild(ov);
+  });
+}
+
+window.addEventListener("popstate", () => {
+  if (!state.isAuthenticated) return;
+  // 1) открыта карточка — «назад» закрывает её
+  if (isDetailVisible()) { hideDetailPanel(); return; }
+  // 2) выбран человек — «назад» возвращает в список
+  if (state.selectedId) {
+    const fromId = state.selectedId; // центрируем его в списке после возврата
+    state.selectedId = null;
+    renderMainView().catch(() => {});
+    if (fromId) {
+      state.selectedId = fromId;
+      centerSelectedInLists();
+      state.selectedId = null;
+    }
+    return;
+  }
+  // 3) мы в списке/обзоре — этот «назад» закроет приложение: спросить
+  confirmExitApp().then((ok) => {
+    if (!ok) pushNavGuard(); // «Остаться» — восстановить защиту
+    else history.back(); // sentinel уже consumed — этот back закроет PWA
+  });
+});
+
 // ── Selection & views ──────────────────────────────────
 
 async function selectPerson(id, { openDetail = false } = {}) {
+  if (state.selectedId === null) pushNavGuard(); // обзор → дерево = шаг в history
   state.selectedId = id;
   renderPersonList();
   centerSelectedInLists(); // активный человек — в середине бокового списка
@@ -1078,6 +1135,7 @@ async function showDetail(id) {
     .join("") || '<p style="margin-top:0.75rem;color:var(--text-muted);font-size:0.85rem">Родственники не указаны</p>';
 
   el.detail.dataset.personId = String(id);
+  if (el.detail.classList.contains("hidden")) pushNavGuard(); // карточка = шаг в history
   el.detail.classList.remove("hidden");
   el.detail.classList.remove("collapsed");
   // На телефоне карточка открывается сразу на всю высоту;
@@ -2194,6 +2252,7 @@ async function init() {
   if (jwtManager.isTokenValid()) {
     try {
       await loadPeople();
+      pushNavGuard(); // «назад» из списка не должен сразу закрыть PWA
       // Человека автоматически не выбираем: при входе показываем обзор
       // всех людей с подсказкой, что нажать, чтобы увидеть древо.
       // Исключение — персональная ссылка: ?person=<id> из редиректа входа.
