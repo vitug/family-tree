@@ -265,6 +265,23 @@ pip install --upgrade pip
 2. Посмотрите детальные логи с `--log-level debug`
 3. Проверьте структуру приложения
 
+## 🖥 Desktop-версия (Windows .exe)
+
+Однофайловый `FamilyTree.exe` без установленного Python — двойной клик, сервер
+поднимается локально и открывается браузер:
+
+```bash
+pip install -r requirements.txt pyinstaller
+pyinstaller family_tree.spec
+```
+
+Подробности — [docs/BUILD_DESKTOP.md](docs/BUILD_DESKTOP.md).
+
+## 📚 Документация
+
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) — для пользователей семьи
+- [docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) — установка, настройка, эксплуатация
+
 ## 📝 Лицензия
 
 MIT — см. [LICENSE](LICENSE).
