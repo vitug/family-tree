@@ -71,6 +71,29 @@ def _person_photo_dir(person_id: int) -> Path:
     return pdir
 
 
+THUMB_SIZE = 256
+
+
+def _make_thumbnail(dest: Path) -> Path | None:
+    """Миниатюра t_<имя>.jpg рядом с фото: списки/карточки тянут ~15 КБ
+    вместо полных ~500 КБ; полное фото — только в карточке человека.
+    При отсутствии Pillow тихо пропускаем (фронт падает на полный URL).
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    thumb = dest.parent / f"t_{dest.stem}.jpg"
+    try:
+        with Image.open(dest) as im:
+            im.thumbnail((THUMB_SIZE, THUMB_SIZE))
+            im.convert("RGB").save(thumb, "JPEG", quality=80, optimize=True)
+        return thumb
+    except Exception:
+        logger.warning("thumbnail failed for %s", dest, exc_info=True)
+        return None
+
+
 @router.post("/{person_id}/photo", response_model=MediaRead, status_code=201, dependencies=[Depends(require_editor_token)])
 async def upload_person_photo(
     person: Annotated[Person, Depends(get_person)],
@@ -114,6 +137,7 @@ async def upload_person_photo(
     fname = f"{h}{ext}"
     dest = _person_photo_dir(person.id) / fname
     dest.write_bytes(content)
+    _make_thumbnail(dest)
 
     if is_primary:
         db.query(Media).filter(Media.person_id == person.id, Media.is_primary).update({Media.is_primary: False})

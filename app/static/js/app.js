@@ -587,7 +587,8 @@ function initials(person) {
 function avatarHtml(person, extraClass = "avatar") {
   const g = genderClass(person.gender);
   if (person.photo_url) {
-    return `<div class="${extraClass} ${g} has-photo"><img src="${escapeHtml(jwtManager.mediaUrl(person.photo_url))}" alt="" loading="lazy" /></div>`;
+    const thumb = person.photo_thumb_url || person.photo_url;
+    return `<div class="${extraClass} ${g} has-photo"><img src="${escapeHtml(jwtManager.mediaUrl(thumb))}" alt="" loading="lazy" /></div>`;
   }
   return `<div class="${extraClass} ${g}">${escapeHtml(initials(person))}</div>`;
 }

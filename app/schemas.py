@@ -47,6 +47,7 @@ class PersonRead(PersonBase):
     id: int
     full_name: str
     photo_url: str | None = None
+    photo_thumb_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -106,6 +107,7 @@ class FamilyMember(BaseModel):
     birth_date: date | None
     death_date: date | None
     photo_url: str | None = None
+    photo_thumb_url: str | None = None
     notes: str | None = None
     relation_to_root: str | None = None
     generation: int = 0

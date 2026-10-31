@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import enum
 from datetime import date, datetime
+from pathlib import Path
 
 from sqlalchemy import Date, DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.config import settings
 from app.database import Base
 
 
@@ -76,6 +78,17 @@ class Person(Base):
         """URL для защищённого эндпоинта /media/... (нужен JWT Bearer или cookie)."""
         if self.photo_path:
             rel = self.photo_path.replace(chr(92), "/").lstrip("/")
+            return f"/media/{rel}"
+        return None
+
+    @property
+    def photo_thumb_url(self) -> str | None:
+        """Миниатюра (t_<имя>.jpg) для списков/карточек; None → фронт берёт полный URL."""
+        if not self.photo_path:
+            return None
+        p = Path(self.photo_path)
+        rel = (p.parent / f"t_{p.stem}.jpg").as_posix().lstrip("/")
+        if (Path(settings.media_dir) / rel).is_file():
             return f"/media/{rel}"
         return None
 

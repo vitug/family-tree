@@ -819,3 +819,29 @@ def test_auth_link_clears_legacy_root_cookie(app_env, monkeypatch):
     cookie_headers = resp.headers.get_list("set-cookie")
     assert any("Path=/test-door-abc/" in h and "Max-Age=" in h and "1970" not in h for h in cookie_headers)
     assert any("Path=/" in h and ("Max-Age=0" in h or "1970" in h) for h in cookie_headers)
+
+
+def test_photo_upload_creates_thumbnail(editor_client):
+    """Загрузка фото создаёт миниатюру t_<имя>.jpg рядом с оригиналом,
+    а photo_thumb_url отдаётся в PersonRead."""
+    from io import BytesIO
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (1024, 1024), (200, 150, 100)).save(buf, "JPEG")
+    buf.seek(0)
+    pid = editor_client.post(
+        "/api/v1/persons",
+        json={"first_name": "Фото", "last_name": "Тестовый", "gender": "male"},
+    ).json()["id"]
+    r = editor_client.post(
+        f"/api/v1/persons/{pid}/photo",
+        files={"file": ("x.jpg", buf, "image/jpeg")},
+    )
+    assert r.status_code == 201, r.text
+    p = editor_client.get(f"/api/v1/persons/{pid}").json()
+    assert p["photo_thumb_url"], "миниатюра не появилась в PersonRead"
+    assert p["photo_thumb_url"].startswith("/media/files/1/t_")
+    t = editor_client.get(p["photo_thumb_url"])
+    assert t.status_code == 200
+    assert len(t.content) < 60 * 1024, "миниатюра должна быть заметно меньше оригинала"
