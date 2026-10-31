@@ -1843,6 +1843,9 @@ function bindEvents() {
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
+  // 🔄 Обновить приложение (в standalone-режиме нет F5)
+  $("#btn-reload-app")?.addEventListener("click", () => location.reload());
+
     const btn = $("#btn-install-app");
     if (btn) btn.hidden = false;
   });
