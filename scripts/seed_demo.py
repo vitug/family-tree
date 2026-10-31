@@ -8,9 +8,10 @@
     --force — пересоздать, даже если люди уже есть (сносит ВСЁ в этой БД).
 """
 import argparse
+import json
 import logging
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -19,7 +20,9 @@ from sqlalchemy import create_engine, delete, func, select  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.config import settings  # noqa: E402
-from app.models import Base, Gender, Person, RelationType, Relationship  # noqa: E402
+from app.models import (  # noqa: E402
+    Base, Gender, Person, PersonRevision, RelationType, Relationship,
+)
 
 log = logging.getLogger("seed_demo")
 
@@ -135,6 +138,34 @@ def main() -> int:
         rel(a, b, RelationType.PARENT_OF)
     for a, b in spouse_of:
         rel(a, b, RelationType.SPOUSE_OF)
+    db.commit()
+
+    # Демо-история правок: у части карточек сразу непустая «История правок»
+    # (реалистичные акторы — как будто семья правила по персональным ссылкам).
+    base_time = datetime.utcnow() - timedelta(days=9)
+
+    def rev(idx, actor, action, changes, days_ago):
+        db.add(PersonRevision(
+            person_id=rows[idx].id,
+            person_name=f"{rows[idx].last_name} {rows[idx].first_name}",
+            action=action, actor=actor,
+            changes=json.dumps(changes, ensure_ascii=False),
+            created_at=base_time + timedelta(days=9 - days_ago, hours=idx),
+        ))
+
+    # индексы P: 1=Мария, 4=Виктор, 7=Ольга, 8=Дмитрий, 12=Иван, 13=Дарья
+    rev(1, "Тестов Виктор", "update",
+        [{"field": "birth_place", "old": "д. Образцово", "new": "с. Образцово, Рязанская область"}], 8)
+    rev(4, "Разработчик", "update",
+        [{"field": "notes", "old": "Инженер.", "new": "Инженер. Участвовал в восстановлении семейного архива."}], 7)
+    rev(7, "Тестова Ольга", "update",
+        [{"field": "notes", "old": "", "new": "Любила садовые цветы."}], 5)
+    rev(8, "Образцова Анна", "update",
+        [{"field": "birth_date", "old": "", "new": "1952-11-03"},
+         {"field": "notes", "old": "", "new": "Год рождения уточнён по архиву ЗАГС."}], 4)
+    rev(12, "Демидов Иван", "update",
+        [{"field": "birth_place", "old": "", "new": "г. Рязань"}], 2)
+    rev(13, "Разработчик", "create", [], 9)
     db.commit()
 
     n = db.scalar(select(func.count()).select_from(Person))
