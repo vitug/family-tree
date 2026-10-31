@@ -867,6 +867,7 @@ function cardHtml(entry) {
         : "";
       return `
     <div class="person-card ${rootCls}" data-id="${p.id}">
+      <button class="card-root-btn" data-root-id="${p.id}" type="button" title="Сделать корнем дерева" aria-label="Сделать корнем дерева">🌳</button>
       ${avatarHtml(p, "card-avatar")}
       <div class="card-name">${escapeHtml(p.full_name)}</div>
       <div class="card-dates">${escapeHtml(formatDates(p))}</div>
@@ -1657,6 +1658,19 @@ function bindEvents() {
   });
 
   el.canvas?.addEventListener("click", (e) => {
+    // 🌳 на плитке — сделать этого человека корнем дерева
+    const rootBtn = e.target.closest(".card-root-btn");
+    if (rootBtn) {
+      e.stopPropagation();
+      state.view = "tree";
+      $$("#view-tabs .tab").forEach((t) => {
+        const on = t.dataset.view === "tree";
+        t.classList.toggle("active", on);
+        t.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      selectPerson(Number(rootBtn.dataset.rootId));
+      return;
+    }
     const card = e.target.closest(".person-card");
     if (card) showDetail(Number(card.dataset.id));
   });
@@ -1683,7 +1697,19 @@ function bindEvents() {
     if (chip) selectPerson(Number(chip.dataset.id), { openDetail: true });
   });
 
-  $("#btn-close-detail")?.addEventListener("click", () => el.detail.classList.add("hidden"));
+  $("#btn-close-detail")?.addEventListener("click", () => {
+    el.detail.classList.add("hidden");
+    el.detail.classList.remove("expanded");
+  });
+  // ⤢ — развернуть карточку на весь экран / обратно
+  $("#btn-expand-detail")?.addEventListener("click", () => {
+    const expanded = el.detail.classList.toggle("expanded");
+    $("#btn-expand-detail")?.setAttribute(
+      "aria-label",
+      expanded ? "Свернуть карточку" : "Развернуть на весь экран"
+    );
+    syncDetailPadding();
+  });
   // тап по полоске-ручке сворачивает/разворачивает нижнюю панель на мобильном
   document.querySelector(".detail-sheet-handle")?.addEventListener("click", () => {
     if (window.innerWidth <= 900) {

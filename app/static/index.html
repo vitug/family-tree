@@ -122,12 +122,15 @@
         <aside class="detail-panel hidden" id="detail-panel" aria-label="Карточка человека">
           <div class="detail-sheet-handle" aria-hidden="true"></div>
           <button class="btn btn-sm btn-ghost close-btn" id="btn-close-detail" type="button" aria-label="Закрыть">✕</button>
+          <button class="btn btn-sm btn-ghost expand-btn" id="btn-expand-detail" type="button" aria-label="Развернуть на весь экран" title="Развернуть на весь экран">⤢</button>
           <h3 id="detail-name"></h3>
           <p id="detail-sub" class="detail-sub"></p>
+          <div class="detail-top-actions">
+            <button class="btn btn-sm" id="btn-set-root" type="button">🌳 В корень дерева</button>
+          </div>
           <div id="detail-relatives"></div>
           <div class="detail-actions">
             <button class="btn btn-sm btn-primary" id="btn-edit-person" type="button">Редактировать</button>
-            <button class="btn btn-sm" id="btn-set-root" type="button">В корень дерева</button>
             <button class="btn btn-sm btn-danger" id="btn-delete-person" type="button">Удалить</button>
           </div>
         </aside>

@@ -1711,3 +1711,43 @@ body::before {
   background: rgba(200, 138, 74, 0.12);
   font-size: 0.95em;
 }
+
+/* 🌳-кнопка «сделать корнем» на каждой плитке дерева */
+.person-card { position: relative; }
+.card-root-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.15s, background 0.15s;
+}
+.card-root-btn:hover,
+.card-root-btn:focus-visible {
+  opacity: 1;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+}
+.person-card.root > .card-root-btn { display: none; } /* корень уже корень */
+.detail-top-actions { margin: 0.3rem 0 0.6rem; }
+
+/* Разворачивание карточки человека на весь экран */
+.detail-panel .expand-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 2.6rem;
+  font-size: 1rem;
+}
+.detail-panel.expanded {
+  width: calc(100% - 2rem);
+  height: calc(100% - 2rem);
+  max-height: calc(100% - 2rem);
+}
+.detail-panel.expanded .expand-btn { transform: rotate(180deg); }
