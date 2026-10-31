@@ -987,7 +987,7 @@ function syncDetailPadding() {
   }
   if (window.innerWidth <= 900 && !dp.classList.contains("hidden")) {
     requestAnimationFrame(() => {
-      const h = dp.classList.contains("collapsed") ? 34 : dp.getBoundingClientRect().height;
+      const h = dp.classList.contains("collapsed") ? 56 : dp.getBoundingClientRect().height;
       sc.style.paddingBottom = h + 40 + "px";
     });
   } else {
