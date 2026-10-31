@@ -1771,9 +1771,17 @@ function bindEvents() {
           $("#btn-expand-detail")?.setAttribute("aria-label", "Свернуть карточку");
           syncDetailPadding();
           startY = null;
-        } else if (dy > 40 && el.detail.classList.contains("collapsed")) {
-          // потянули вниз на свёрнутой — спрятать совсем
-          hideDetailPanel();
+        } else if (dy > 40) {
+          if (el.detail.classList.contains("collapsed")) {
+            // потянули вниз на свёрнутой — спрятать совсем
+            hideDetailPanel();
+          } else {
+            // потянули вниз на открытой — свернуть в полоску
+            el.detail.classList.remove("expanded");
+            el.detail.classList.add("collapsed");
+            $("#btn-expand-detail")?.setAttribute("aria-label", "Развернуть на весь экран");
+            syncDetailPadding();
+          }
           startY = null;
         }
       },
