@@ -752,13 +752,18 @@ window.addEventListener("popstate", () => {
       return;
     }
     // «Выйти»: холодное PWA стоит на первой записи history — back() откатывать
-    // нечего. Пробуем window.close(); если не сработал, guard НЕ восстанавливаем:
-    // следующий «назад» закроет приложение уже без вопроса.
+    // нечего, а window.close() Chrome в standalone игнорирует. Guard НЕ
+    // восстанавливаем: следующий «назад» закроет приложение уже без вопроса.
     window.close();
+    setTimeout(() => {
+      if (document.visibilityState === "visible") {
+        toast("Нажмите «назад» ещё раз, чтобы выйти", "info");
+      }
+    }, 300);
   });
 });
 
-pushNavGuard(); // ставить СРАЗУ при загрузке скрипта: «назад» до конца авторизации тоже должен спросить
+window.__ftNavReady = true; // boot-guard уже стоит из inline-скрипта в <head> — не дублировать
 
 // ── Selection & views ──────────────────────────────────
 

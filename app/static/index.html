@@ -1,6 +1,16 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+  <!-- Guard «назад» ДО загрузки app.js: на холодном старте PWA кнопку жмут раньше,
+       чем выполнится основной скрипт — без этого запись history не успевает появиться
+       и первый «назад» закрывает приложение без вопроса. -->
+  <script>
+    history.pushState({ ftBoot: 1 }, "", location.href);
+    window.addEventListener("popstate", function () {
+      // app.js ещё не готов — просто восстановить защиту
+      if (!window.__ftNavReady) history.pushState({ ftBoot: 2 }, "", location.href);
+    });
+  </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#1a222d" />
