@@ -1085,7 +1085,7 @@ async function showDetail(id) {
 
   el.detailName.textContent = person.full_name;
   const bits = [formatDates(person), person.birth_place, genderLabel(person.gender)].filter(Boolean);
-  if (person.maiden_name) bits.unshift(`в девичестве ${person.maiden_name}`);
+  if (person.maiden_name && person.maiden_name.trim().toLowerCase() !== (person.last_name || "").trim().toLowerCase()) bits.unshift(`в девичестве ${person.maiden_name}`);
   bits.push(`ID ${id}`);
   el.detailSub.textContent = bits.join(" · ");
 
