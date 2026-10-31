@@ -362,8 +362,9 @@ body::before {
 .detail-photo img {
   width: 100%;
   max-height: 220px;
-  object-fit: cover;
+  object-fit: contain; /* всё лицо целиком, без обрезки */
   display: block;
+  cursor: zoom-in;
 }
 
 .photo-section {
@@ -1803,4 +1804,22 @@ body::before {
 }
 .detail-panel h3 {
   padding-right: 5.5rem;
+}
+
+/* Полноэкранный просмотр фото */
+.photo-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  cursor: zoom-out;
+}
+.photo-lightbox img {
+  max-width: 96vw;
+  max-height: 96vh;
+  object-fit: contain;
+  border-radius: 8px;
 }

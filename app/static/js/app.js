@@ -1022,7 +1022,7 @@ async function showDetail(id) {
     el.detailSub.insertAdjacentElement("afterend", photoBlock);
   }
   if (person.photo_url) {
-    photoBlock.innerHTML = `<img src="${escapeHtml(jwtManager.mediaUrl(person.photo_url))}" alt="${escapeHtml(person.full_name)}" />`;
+    photoBlock.innerHTML = `<img src="${escapeHtml(jwtManager.mediaUrl(person.photo_url))}" data-full="${escapeHtml(jwtManager.mediaUrl(person.photo_url))}" alt="${escapeHtml(person.full_name)}" title="Развернуть фото" />`;
     photoBlock.classList.remove("hidden");
   } else {
     photoBlock.innerHTML = "";
@@ -1715,6 +1715,20 @@ function bindEvents() {
     el.detail.classList.add("hidden");
     el.detail.classList.remove("expanded");
   });
+  // Клик по фото в карточке — полноэкранный просмотр (тап/Esc — закрыть)
+  el.detail?.addEventListener("click", (e) => {
+    const img = e.target.closest(".detail-photo img, .photo-gallery img");
+    if (!img) return;
+    const full = img.dataset.full || img.src;
+    const lb = document.createElement("div");
+    lb.className = "photo-lightbox";
+    lb.innerHTML = `<img src="${escapeHtml(full)}" alt="" />`;
+    lb.addEventListener("click", () => lb.remove());
+    document.body.appendChild(lb);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") document.querySelector(".photo-lightbox")?.remove();
+  });
   // ⤢ — развернуть карточку на весь экран / обратно
   $("#btn-expand-detail")?.addEventListener("click", () => {
     const expanded = el.detail.classList.toggle("expanded");
@@ -2178,7 +2192,7 @@ async function loadPersonPhotos(personId, photoBlock) {
       (m) =>
         `<img class="photo-thumb" src="${escapeHtml(
           jwtManager.mediaUrl(m.url)
-        )}" alt="${escapeHtml(m.description || "фото")}" loading="lazy" title="${escapeHtml(
+        )}" data-full="${escapeHtml(jwtManager.mediaUrl(m.url))}" alt="${escapeHtml(m.description || "фото")}" loading="lazy" title="${escapeHtml(
           m.description || ""
         )}" />`
     )
