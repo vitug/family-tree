@@ -703,6 +703,7 @@ let exitingApp = false; // true после подтверждения «Выйт
 function pushNavGuard() {
   // Дополнительная запись в history: «назад» сначала отрабатывает приложение,
   // и только за пределами стека — закрывает PWA.
+  exitingApp = false; // пользователь продолжает пользоваться приложением
   history.pushState({ ftNav: ++navGuardSeq }, "", location.pathname + location.search + location.hash);
 }
 function isDetailVisible() {
@@ -753,13 +754,14 @@ window.addEventListener("popstate", () => {
       pushNavGuard(); // «Остаться» — восстановить защиту
       return;
     }
-    // «Выйти»: window.close() Chrome в standalone игнорирует, а в стеке
-    // history могут оставаться guard-записи — каждый «назад» снимал бы по
-    // одной и снова спрашивал. Откатываемся к базовой записи разом:
-    // следующий «назад» закроет приложение уже нативно, без вопроса.
+    // «Выйти»: window.close() Chrome в standalone игнорирует. Откатываемся к
+    // САМОЙ ПЕРВОЙ записи истории (base), учитывая и boot-guard из <head>:
+    // тогда следующий «назад» закрывает приложение нативно, без вопроса.
+    // Раньше boot-запись не считалась — «назад» молча тратился на неё.
     exitingApp = true;
-    const depth = navGuardSeq;
+    const depth = navGuardSeq + (window.__ftBootPushed ? 1 : 0);
     navGuardSeq = 0;
+    window.__ftBootPushed = false;
     if (depth > 0) history.go(-depth);
     window.close();
     setTimeout(() => {
@@ -767,6 +769,9 @@ window.addEventListener("popstate", () => {
         toast("Нажмите «назад» ещё раз, чтобы выйти", "info");
       }
     }, 300);
+    // откат стека порождает popstate-события — глотаем их, но не вечно:
+    // если выход всё же не случился, приложение должно продолжать работать
+    setTimeout(() => { exitingApp = false; }, 900);
   });
 });
 
