@@ -121,8 +121,10 @@
 
         <aside class="detail-panel hidden" id="detail-panel" aria-label="Карточка человека">
           <div class="detail-sheet-handle" aria-hidden="true"></div>
-          <button class="btn btn-sm btn-ghost close-btn" id="btn-close-detail" type="button" aria-label="Закрыть">✕</button>
-          <button class="btn btn-sm btn-ghost expand-btn" id="btn-expand-detail" type="button" aria-label="Развернуть на весь экран" title="Развернуть на весь экран">⤢</button>
+          <div class="detail-corner-btns">
+            <button class="btn btn-sm btn-ghost expand-btn" id="btn-expand-detail" type="button" aria-label="Развернуть на весь экран" title="Развернуть на весь экран">⤢</button>
+            <button class="btn btn-sm btn-ghost close-btn" id="btn-close-detail" type="button" aria-label="Закрыть" title="Закрыть">✕</button>
+          </div>
           <h3 id="detail-name"></h3>
           <p id="detail-sub" class="detail-sub"></p>
           <div class="detail-top-actions">

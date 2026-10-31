@@ -918,12 +918,15 @@ body::before {
   font-size: 0.85rem;
 }
 
-.detail-panel .close-btn {
+.detail-corner-btns {
   position: absolute;
   top: 0.65rem;
   right: 0.65rem;
-  z-index: 1;
+  display: flex;
+  gap: 0.35rem;
+  z-index: 2;
 }
+.detail-corner-btns .btn { margin: 0; }
 
 .rel-group {
   margin-top: 0.9rem;
@@ -1740,9 +1743,6 @@ body::before {
 
 /* Разворачивание карточки человека на весь экран */
 .detail-panel .expand-btn {
-  position: absolute;
-  top: 0.4rem;
-  right: 2.6rem;
   font-size: 1rem;
 }
 .detail-panel.expanded {
@@ -1765,15 +1765,15 @@ body::before {
   }
 }
 
-/* ✕ и ⤢ — фиксированная ширина и гарантированный зазор, чтобы не наезжали */
-.detail-panel .close-btn,
-.detail-panel .expand-btn {
+/* ✕ и ⤢ — один ряд в .detail-corner-btns, одинаковая ширина и высота */
+.detail-corner-btns .close-btn,
+.detail-corner-btns .expand-btn {
   width: 38px;
+  height: 38px;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-}
-.detail-panel .expand-btn {
-  right: calc(0.65rem + 42px);
 }
 .detail-panel h3 {
   padding-right: 5.5rem;
