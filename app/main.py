@@ -235,38 +235,45 @@ if settings.protect_api_docs:
 def pwa_manifest() -> JSONResponse:
     """Web App Manifest: start_url/scope/icons — с учётом root_path (nginx-дверь)."""
     root = (settings.root_path or "").rstrip("/")
+    # Имя из настроек инстанса: прод «Семейное дерево», дев «Семейное дерево (dev)».
+    # Отдельный "id" (по двери) позволяет установить ОБА как отдельные приложения.
+    app_name = settings.app_name if "dev" in settings.app_name.lower() else "Семейное дерево"
+    short_name = "Дерево (dev)" if "dev" in app_name.lower() else "Дерево"
+    is_dev = "dev" in app_name.lower()
+    icons_dir = "icons-dev" if is_dev else "icons"  # дев — янтарное дерево, прод — синее
     manifest = {
-        "name": "Семейное дерево",
-        "short_name": "Дерево",
-        "description": "Генеалогическое дерево семьи",
+        "id": f"{root}/",
+        "name": app_name,
+        "short_name": short_name,
+        "description": "Генеалогическое дерево семьи" + (" (стенд разработки)" if is_dev else ""),
         "lang": "ru",
         "start_url": f"{root}/",
         "scope": f"{root}/",
         "display": "standalone",
         "orientation": "any",
-        "background_color": "#1a222d",
-        "theme_color": "#1a222d",
+        "background_color": "#3d2816" if is_dev else "#1a222d",
+        "theme_color": "#3d2816" if is_dev else "#1a222d",
         "icons": [
             {
-                "src": f"{root}/static/icons/icon-192.png",
+                "src": f"{root}/static/{icons_dir}/icon-192.png",
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": f"{root}/static/icons/icon-512.png",
+                "src": f"{root}/static/{icons_dir}/icon-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": f"{root}/static/icons/icon-maskable-192.png",
+                "src": f"{root}/static/{icons_dir}/icon-maskable-192.png",
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "maskable",
             },
             {
-                "src": f"{root}/static/icons/icon-maskable-512.png",
+                "src": f"{root}/static/{icons_dir}/icon-maskable-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",

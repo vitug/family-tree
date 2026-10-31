@@ -845,3 +845,12 @@ def test_photo_upload_creates_thumbnail(editor_client):
     t = editor_client.get(p["photo_thumb_url"])
     assert t.status_code == 200
     assert len(t.content) < 60 * 1024, "миниатюра должна быть заметно меньше оригинала"
+
+
+def test_manifest_id_and_name_per_instance(viewer_client):
+    """Manifest: у каждого инстанса свой id (по двери) и имя —
+    дев и прод можно установить как отдельные приложения."""
+    m = viewer_client.get("/manifest.webmanifest").json()
+    assert "id" in m and m["id"]
+    assert m["id"] == m["start_url"], "id должен совпадать со start_url (дверь инстанса)"
+    assert m["name"], "имя приложения обязательно"
