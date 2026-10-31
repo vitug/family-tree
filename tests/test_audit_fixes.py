@@ -731,6 +731,21 @@ def test_mask_no_false_positives():
     assert "[адрес скрыт]" in masked
 
 
+def test_mask_code_with_explanatory_words():
+    """«Код <пояснение>: 1234» маскируется — между словом и разделителем есть слова."""
+    from app.services.privacy import mask_notes
+
+    masked = mask_notes("Даты неизвестны. Код для маскировки: 4321")
+    assert "4321" not in masked
+    assert "[код скрыт]" in masked
+    # без пояснительных слов — как раньше
+    assert "[код скрыт]" in mask_notes("домофон: 0000")
+    assert "[код скрыт]" in mask_notes("код - 12345")
+    # омонимы: «код» без цифр за разделителем не трогаем
+    text = "Изучал кодовую базу. Код города не помнит."
+    assert mask_notes(text) == text
+
+
 # ── PWA: установка сайта как приложение ─────────────────────────────────────
 
 
