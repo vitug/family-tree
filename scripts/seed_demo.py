@@ -83,6 +83,15 @@ def build_demo_data():
     P.append(person("Изольда", "Безродная", Gender.FEMALE, date(1990, 2, 14),
                     notes="Без связей: кейс одинокой карточки в общем списке."))
 
+    # Иностранцы: англоязычные заметки с ПДн — проверка маскировки на английском
+    P.append(person("Emily", "Johnson", Gender.FEMALE, date(1982, 7, 19),
+                    birth_place="Boston, USA",
+                    notes="Came from the USA. Phone: +1 415 555 1234. "
+                          "Door code: 4567. Email: emily.j@example.com"))
+    P.append(person("James", "Johnson", Gender.MALE, date(1955, 3, 2),
+                    birth_place="Boston, USA",
+                    notes="Emily's father. Lives at 221B Baker Street, London. PIN: 778899."))
+
     # (родитель, ребёнок) по индексам P[...]
     parent_of = [
         (0, 4), (1, 4),          # Пётр+Мария → Виктор
@@ -99,7 +108,11 @@ def build_demo_data():
         (0, 1), (2, 3),          # Пётр—Мария, Николай—Анна
         (6, 5),                  # Сергей—Лидия (id пары: PARENT_OF идёт от родителя)
         (10, 11),                # Елена—Роман
+        (9, 16),                 # Алексей—Emily (иностранка, англоязычные заметки)
+        (17, 16),                # James — отец Emily (PARENT_OF ниже)
     ]
+    # James (17) — родитель Emily (16)
+    parent_of = parent_of + [(17, 16)]
     return P, parent_of, spouse_of
 
 

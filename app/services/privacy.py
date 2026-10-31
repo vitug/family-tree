@@ -3,12 +3,18 @@ from __future__ import annotations
 
 import re
 
+try:  # опционально: телефоны любых стран/форматов (Google libphonenumber)
+    import phonenumbers
+except ImportError:  # pragma: no cover
+    phonenumbers = None
+
 _PHONE_RE = re.compile(r"\+?[78][\s\-()]?\d{3}[\s\-()]?\d{3}[\s\-()]?\d{2}[\s\-()]?\d{2}|\+\d[\d\s\-()]{9,}\d")
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 #_domofon/access codes: sequences like #1495#, "домофон: 0000" или "код <пояснение>: 1234"
 # между словом и цифрами допускаются пояснительные слова до разделителя («код для маскировки: 4321»)
 _CODE_RE = re.compile(
-    r"#\d{3,}#|\b(?:домофон|код)\b[^.\n]{0,40}?[:—-]\s*\d{3,}\b", re.IGNORECASE
+    r"#\d{3,}#|\b(?:домофон|код|code|passcode|pin)\b[^.\n]{0,40}?[:—-]\s*\d{3,}\b",
+    re.IGNORECASE,
 )
 # адреса: улица/проспект/пр-т + номер, кв.
 _ADDR_RE = re.compile(
@@ -21,6 +27,11 @@ _PHONE_SUB = "[телефон скрыт]"
 _EMAIL_SUB = "[e-mail скрыт]"
 _CODE_SUB = "[код скрыт]"
 _ADDR_SUB = "[адрес скрыт]"
+# английские адреса: номер + название + Street/Ave/Rd/...
+_ADDR_EN_RE = re.compile(
+    r"\b\d+\w*\s+(?:[A-Z][\w'’-]*\s+){0,3}"
+    r"(?:Street|St\.?|Avenue|Ave\.?|Road|Rd\.?|Lane|Ln\.?|Drive|Dr\.?|Boulevard|Blvd\.?)\b"
+)
 
 
 def mask_notes(notes: str | None) -> str | None:
@@ -30,9 +41,31 @@ def mask_notes(notes: str | None) -> str | None:
     text = notes
     text = _EMAIL_RE.sub(_EMAIL_SUB, text)
     text = _PHONE_RE.sub(_PHONE_SUB, text)
+    text = _mask_phones_lib(text)
     text = _CODE_RE.sub(_CODE_SUB, text)
     text = _ADDR_RE.sub(_ADDR_SUB, text)
+    text = _ADDR_EN_RE.sub(_ADDR_SUB, text)
     return text
+
+
+def _mask_phones_lib(text: str) -> str:
+    """Телефоны любых стран/форматов через phonenumbers (если установлен).
+
+    Fallback после regex: ловит записи без +7 («8 900 111 22 33») и
+    международные форматы. Даты (05.10.1948) не цепляет.
+    """
+    if phonenumbers is None:
+        return text
+    matches = list(phonenumbers.PhoneNumberMatcher(text, region="RU"))
+    if not matches:
+        return text
+    out, pos = [], 0
+    for m in matches:
+        out.append(text[pos:m.start.raw])
+        out.append(_PHONE_SUB)
+        pos = m.end.raw
+    out.append(text[pos:])
+    return "".join(out)
 
 
 def viewer_allowed_ids(db, user: dict) -> set[int]:

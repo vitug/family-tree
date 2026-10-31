@@ -746,6 +746,26 @@ def test_mask_code_with_explanatory_words():
     assert mask_notes(text) == text
 
 
+def test_mask_english_pii():
+    """Англоязычные заметки: телефон США, code/pin, e-mail, англ. адрес."""
+    from app.services.privacy import mask_notes
+
+    masked = mask_notes(
+        "Phone: +1 415 555 1234. Door code: 4567. Email: emily.j@example.com"
+    )
+    assert "415" not in masked and "4567" not in masked and "emily" not in masked
+    assert masked.count("[телефон скрыт]") == 1
+    assert "[код скрыт]" in masked and "[e-mail скрыт]" in masked
+    # телефон без плюса — ловит только phonenumbers
+    m2 = mask_notes("мой номер 8 900 111 22 33")
+    assert "[телефон скрыт]" in m2 and "900" not in m2
+    # английский адрес
+    m3 = mask_notes("Lives at 221B Baker Street, London")
+    assert "[адрес скрыт]" in m3 and "Baker" not in m3
+    # pin/passcode
+    assert "[код скрыт]" in mask_notes("Pin: 98765 remember")
+
+
 # ── PWA: установка сайта как приложение ─────────────────────────────────────
 
 
