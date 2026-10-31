@@ -145,26 +145,35 @@ async def protected_media_file(
     person_id: int,
     filename: str,
     request: Request,
-    db: Session = Depends(get_db),
 ):
-    """JWT: Authorization Bearer или httpOnly cookie."""
-    from app.security import require_media_auth
+    """JWT: Authorization Bearer или httpOnly cookie.
+
+    Сессию БД НЕ держим в Depends: FastAPI закрывает yield-зависимости
+    только ПОСЛЕ полной отдачи ответа, а FileResponse стримит файл —
+    при массовой загрузке фото пул соединений исчерпывался
+    (QueuePool limit reached → «внутренняя ошибка»). Ищем запись
+    в короткоживущей сессии и закрываем её ДО начала стриминга.
+    """
+    from app.database import SessionLocal
+    from app.security import get_media_access, require_media_auth
 
     await require_media_auth(request)
-    return await serve_protected_media(person_id, filename, db)
+    with SessionLocal() as db:
+        await get_media_access(person_id, filename, db)
+    return await serve_protected_media(person_id, filename, db=None)
 
 
 @app.get("/media/{file_path:path}", response_class=FileResponse, include_in_schema=False)
 async def protected_media_path(
     file_path: str,
     request: Request,
-    db: Session = Depends(get_db),
 ):
     """
     Универсальная защищённая раздача: /media/files/...
-    Совместимо с photo_url из моделей.
+    Совместимо с photo_url из моделей. Без Depends(get_db):
+    стриминг FileResponse не должен держать соединение пула.
     """
-    return await serve_protected_media_by_path(file_path, request, db)
+    return await serve_protected_media_by_path(file_path, request)
 
 
 # ── Статика ────────────────────────────────────────────────────────────────

@@ -224,9 +224,15 @@ async def get_media_access(
     return person, media
 
 
-async def serve_protected_media(person_id: int, filename: str, db: Session) -> FileResponse:
-    """Раздача файла media/files/{person_id}/{filename}."""
-    await get_media_access(person_id, filename, db)
+async def serve_protected_media(person_id: int, filename: str, db) -> FileResponse:
+    """Раздача файла media/files/{person_id}/{filename}.
+
+    db может быть None (запись уже проверена вызывающим кодом) —
+    тогда поиск в БД пропускается: FileResponse стримится после закрытия
+    сессии, чтобы не занимать соединение пула.
+    """
+    if db is not None:
+        await get_media_access(person_id, filename, db)
 
     safe_name = Path(filename).name
     candidates = [
@@ -243,7 +249,6 @@ async def serve_protected_media(person_id: int, filename: str, db: Session) -> F
 async def serve_protected_media_by_path(
     file_path: str,
     request: Request,
-    db: Session,
 ) -> FileResponse:
     """
     Раздача по относительному пути (files/...), JWT через Bearer или httpOnly cookie.
