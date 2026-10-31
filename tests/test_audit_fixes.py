@@ -806,3 +806,16 @@ def test_auth_cookie_path_follows_root_path(app_env, monkeypatch):
     monkeypatch.setattr(settings, "root_path", "")
     resp2 = app_env.get(f"/api/v1/auth/link/{settings.view_token}", follow_redirects=False)
     assert "Path=/" in resp2.headers.get("set-cookie", "")
+
+
+def test_auth_link_clears_legacy_root_cookie(app_env, monkeypatch):
+    """Вход за дверью должен затирать легаси-cookie с Path=/: при дубле имени
+    Starlette берёт последний из Cookie-заголовка, и старый прод-JWT
+    перебивает cookie дев-стенда на том же домене."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "root_path", "/test-door-abc/")
+    resp = app_env.get(f"/api/v1/auth/link/{settings.view_token}", follow_redirects=False)
+    cookie_headers = resp.headers.get_list("set-cookie")
+    assert any("Path=/test-door-abc/" in h and "Max-Age=" in h and "1970" not in h for h in cookie_headers)
+    assert any("Path=/" in h and ("Max-Age=0" in h or "1970" in h) for h in cookie_headers)

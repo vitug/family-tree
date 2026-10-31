@@ -29,6 +29,17 @@ def _cookie_path() -> str:
 
 
 def set_auth_cookie(response: Response, request: Request, token: str, max_age: int) -> None:
+    # Затереть легаси-cookie с Path=/ (до фикса пути): при дубле имени в
+    # Cookie-заголовке Starlette оставляет ПОСЛЕДНИЙ, и старый прод-JWT
+    # перебивает свежий cookie этого инстанса («просит авторизацию»).
+    if _cookie_path() != "/":
+        response.delete_cookie(
+            key=AUTH_COOKIE_NAME,
+            path="/",
+            httponly=True,
+            samesite="lax",
+            secure=_cookie_secure(request),
+        )
     response.set_cookie(
         key=AUTH_COOKIE_NAME,
         value=token,
