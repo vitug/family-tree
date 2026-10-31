@@ -1764,3 +1764,17 @@ body::before {
     max-height: none;
   }
 }
+
+/* ✕ и ⤢ — фиксированная ширина и гарантированный зазор, чтобы не наезжали */
+.detail-panel .close-btn,
+.detail-panel .expand-btn {
+  width: 38px;
+  padding: 0;
+  justify-content: center;
+}
+.detail-panel .expand-btn {
+  right: calc(0.65rem + 42px);
+}
+.detail-panel h3 {
+  padding-right: 5.5rem;
+}
