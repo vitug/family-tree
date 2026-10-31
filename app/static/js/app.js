@@ -1075,6 +1075,14 @@ async function showDetail(id) {
   el.detail.dataset.personId = String(id);
   el.detail.classList.remove("hidden");
   el.detail.classList.remove("collapsed");
+  // На телефоне карточка открывается сразу на всю высоту;
+  // ⤢ уменьшает её до половины и обратно.
+  if (window.innerWidth <= 900) {
+    el.detail.classList.add("expanded");
+    $("#btn-expand-detail")?.setAttribute("aria-label", "Свернуть карточку");
+  } else {
+    el.detail.classList.remove("expanded");
+  }
   document.body.classList.add("detail-open");
   syncDetailPadding();
 
