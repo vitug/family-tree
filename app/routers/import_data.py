@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.routers.auth import require_jwt_token, require_editor_token
+from app.routers.auth import require_editor_token
 from app.database import get_db
 from app.services.gramps_import import GrampsImporter
 

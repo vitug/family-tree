@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
-from app.database import get_db
 from app.models import Media, Person
 
 logger = logging.getLogger(__name__)
@@ -176,7 +175,7 @@ def _safe_media_path(relative: str) -> Path:
     """Разрешить относительный путь внутри media_dir без path traversal."""
     rel = relative.replace("\\", "/").lstrip("/")
     if ".." in rel.split("/"):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Недопустимый путь")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Недопустимый путь") from None
     base = Path(settings.media_dir).resolve()
     full = (base / rel).resolve()
     try:
@@ -184,7 +183,7 @@ def _safe_media_path(relative: str) -> Path:
         # который теоретически пропускал бы media2 при базе media)
         full.relative_to(base)
     except ValueError:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Недопустимый путь")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Недопустимый путь") from None
     return full
 
 
@@ -197,6 +196,11 @@ def unlink_media_file(relative_path: str | None) -> None:
         if full.is_file():
             full.unlink()
             logger.info("Deleted media file: %s", full)
+        # миниатюра t_<stem>.jpg живёт рядом — чистим и её, иначе копится мусор
+        thumb = full.with_name(f"t_{full.stem}.jpg")
+        if thumb != full and thumb.is_file():
+            thumb.unlink(missing_ok=True)
+            logger.info("Deleted thumbnail: %s", thumb)
     except HTTPException:
         logger.warning("Skip delete, unsafe or missing path: %s", relative_path)
     except OSError as exc:
@@ -331,7 +335,7 @@ async def require_docs_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный токен для доступа к документации",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
 
 # ── Client IP extraction ───────────────────────────────────────────────────

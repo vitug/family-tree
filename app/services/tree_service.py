@@ -5,7 +5,6 @@ from collections import deque
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Person, PersonRevision, RelationType, Relationship
@@ -66,7 +65,7 @@ class TreeService:
         try:
             validate_person_dates(data.birth_date, data.death_date)
         except ValueError as e:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
         person = Person(**data.model_dump())
         self.db.add(person)
         self.db.flush()  # нужен id до записи ревизии

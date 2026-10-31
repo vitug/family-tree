@@ -10,12 +10,11 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 from starlette.requests import Request
 
 from app import __version__
 from app.config import settings
-from app.database import get_db, init_db
+from app.database import init_db
 from app.logging_config import get_access_logger, setup_logging
 from app.routers import auth, export_data, import_data, media, persons, relationships, tree
 from app.security import (

@@ -105,14 +105,8 @@ def check_new_relationship(db: Session, data) -> list[str]:
     return errors
 
 
-def validate_tree(db: Session) -> dict:
-    """Полный аудит базы: {stats, errors, warnings}. Для скриптов и тестов."""
-    people = db.scalars(select(Person)).all()
-    rels = db.scalars(select(Relationship)).all()
-    byid = {p.id: p for p in people}
-    errors: list[str] = []
-    warnings: list[str] = []
-
+def _check_people(people: list[Person], errors: list[str], warnings: list[str]) -> None:
+    """Даты жизни каждого человека: смерть<рождения (ошибка), >110 лет (warning)."""
     today = date.today()
     for p in people:
         try:
@@ -128,6 +122,11 @@ def validate_tree(db: Session) -> dict:
                     f"(дата смерти не указана?)"
                 )
 
+
+def _index_relationships(
+    rels: list[Relationship], errors: list[str]
+) -> tuple[dict[int, list[int]], dict[int, set[int]]]:
+    """Разложить связи по типам; поймать self-link и дубли. → (par_of, spouses)."""
     par_of: dict[int, list[int]] = {}
     spouses: dict[int, set[int]] = {}
     seen: set = set()
@@ -148,7 +147,17 @@ def validate_tree(db: Session) -> dict:
             seen.add(pair)
             spouses.setdefault(a, set()).add(b)
             spouses.setdefault(b, set()).add(a)
+    return par_of, spouses
 
+
+def _check_parent_rules(
+    db: Session,
+    byid: dict[int, Person],
+    par_of: dict[int, list[int]],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """>2 родителей, возраст/смерть родителя, фамилия при рождении (warning)."""
     for pid, parents in par_of.items():
         child = byid[pid]
         if len(parents) > 2:
@@ -168,6 +177,12 @@ def validate_tree(db: Session) -> dict:
                     f"с родителем {pp.full_name}"
                 )
 
+
+def _check_cycles(
+    par_of: dict[int, list[int]], errors: list[str]
+) -> None:
+    """Человек не должен быть своим собственным предком."""
+
     def ancestors(pid: int, acc: set[int] | None = None) -> set[int]:
         acc = acc or set()
         for par in par_of.get(pid, []):
@@ -181,6 +196,13 @@ def validate_tree(db: Session) -> dict:
         if pid in ancestors(pid):
             errors.append(f"цикл родства у id{pid}")
 
+
+def _check_spouse_gaps(
+    byid: dict[int, Person],
+    spouses: dict[int, set[int]],
+    warnings: list[str],
+) -> None:
+    """Разница возрастов супругов >35 лет — предупреждение."""
     for a, lst in spouses.items():
         for b in lst:
             if a >= b:
@@ -194,11 +216,27 @@ def validate_tree(db: Session) -> dict:
                         f"{pb.full_name}: {gap:.0f} лет"
                     )
 
+
+def _isolates(byid: dict[int, Person], par_of, spouses) -> list[str]:
     linked = set(par_of) | {p for ps in par_of.values() for p in ps} | set(spouses)
-    isolates = [byid[i].full_name for i in byid if i not in linked]
-    if isolates:
-        for name in isolates:
-            warnings.append(f"без связей (изоляты): {name}")
+    return [byid[i].full_name for i in byid if i not in linked]
+
+
+def validate_tree(db: Session) -> dict:
+    """Полный аудит базы: {stats, errors, warnings}. Для скриптов и тестов."""
+    people = db.scalars(select(Person)).all()
+    rels = db.scalars(select(Relationship)).all()
+    byid = {p.id: p for p in people}
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    _check_people(people, errors, warnings)
+    par_of, spouses = _index_relationships(rels, errors)
+    _check_parent_rules(db, byid, par_of, errors, warnings)
+    _check_cycles(par_of, errors)
+    _check_spouse_gaps(byid, spouses, warnings)
+    for name in _isolates(byid, par_of, spouses):
+        warnings.append(f"без связей (изоляты): {name}")
 
     return {
         "stats": {

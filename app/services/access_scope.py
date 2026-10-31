@@ -32,29 +32,36 @@ def _spouses_of(db: Session, ids: set[int]) -> set[int]:
     return {b for a, b in rows if b not in ids}
 
 
-def _parents_of(db: Session, ids: set[int]) -> set[int]:
-    """Родители людей из ids (parent_of: person_id — родитель, related — ребёнок)."""
+def _linked_by_parent_of(
+    db: Session, ids: set[int], *, column, match_column
+) -> set[int]:
+    """Общий запрос по parent_of: вернуть column там, где match_column in ids."""
     if not ids:
         return set()
     rows = db.execute(
-        select(Relationship.person_id).where(
+        select(column).where(
             Relationship.relation_type == "parent_of",
-            Relationship.related_person_id.in_(ids),
+            match_column.in_(ids),
         )
     ).all()
     return {r[0] for r in rows}
+
+
+def _parents_of(db: Session, ids: set[int]) -> set[int]:
+    """Родители людей из ids (person_id — родитель, related — ребёнок)."""
+    return _linked_by_parent_of(
+        db, ids,
+        column=Relationship.person_id,
+        match_column=Relationship.related_person_id,
+    )
 
 
 def _children_of(db: Session, ids: set[int]) -> set[int]:
-    if not ids:
-        return set()
-    rows = db.execute(
-        select(Relationship.related_person_id).where(
-            Relationship.relation_type == "parent_of",
-            Relationship.person_id.in_(ids),
-        )
-    ).all()
-    return {r[0] for r in rows}
+    return _linked_by_parent_of(
+        db, ids,
+        column=Relationship.related_person_id,
+        match_column=Relationship.person_id,
+    )
 
 
 def family_person_ids(db: Session, person_id: int, depth: int) -> set[int]:

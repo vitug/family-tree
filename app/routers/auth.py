@@ -128,18 +128,18 @@ def decode_access_token(token: str) -> dict:
     """Декодировать и валидировать JWT токен."""
     try:
         return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    except jwt.ExpiredSignatureError:
+    except jwt.ExpiredSignatureError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Токен истёк",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidTokenError:
+        ) from exc
+    except jwt.InvalidTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный токен",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
 
 
 def _payload_as_user(payload: dict) -> dict:
@@ -414,7 +414,7 @@ async def refresh_token(request: Request, response: Response) -> TokenResponse:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Не удалось обновить токен",
-        )
+        ) from e
 
 
 @router.post("/logout")

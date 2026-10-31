@@ -133,7 +133,7 @@ async def upload_person_photo(
 
     from hashlib import sha1
 
-    h = sha1(content).hexdigest()[:12]
+    h = sha1(content, usedforsecurity=False).hexdigest()[:12]
     fname = f"{h}{ext}"
     dest = _person_photo_dir(person.id) / fname
     dest.write_bytes(content)

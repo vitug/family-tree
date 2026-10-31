@@ -57,6 +57,13 @@ def get_relatives(
     return resp
 
 
+def _mask_generations(resp, user, allowed) -> None:
+    """Для viewer скрыть в поколениях людей вне разрешённого круга."""
+    if user.get("role") == "viewer":
+        for gen in getattr(resp, "generations", None) or []:
+            mask_member_list(getattr(gen, "members", None), allowed)
+
+
 @router.get("/{person_id}/ancestors", response_model=AncestorsResponse, dependencies=[Depends(require_jwt_token)])
 def get_ancestors(
     person_id: int,
@@ -67,10 +74,7 @@ def get_ancestors(
 ) -> AncestorsResponse:
     """Предки по поколениям (1 — родители, 2 — бабушки/дедушки, …)."""
     resp = service.get_ancestors(person_id, max_depth=max_depth)
-    allowed = _viewer_allowed_ids(db, user)
-    if user.get("role") == "viewer":
-        for gen in getattr(resp, "generations", None) or []:
-            mask_member_list(getattr(gen, "members", None), allowed)
+    _mask_generations(resp, user, _viewer_allowed_ids(db, user))
     return resp
 
 
@@ -84,10 +88,7 @@ def get_descendants(
 ) -> DescendantsResponse:
     """Потомки по поколениям (1 — дети, 2 — внуки, …)."""
     resp = service.get_descendants(person_id, max_depth=max_depth)
-    allowed = _viewer_allowed_ids(db, user)
-    if user.get("role") == "viewer":
-        for gen in getattr(resp, "generations", None) or []:
-            mask_member_list(getattr(gen, "members", None), allowed)
+    _mask_generations(resp, user, _viewer_allowed_ids(db, user))
     return resp
 
 

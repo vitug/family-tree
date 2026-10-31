@@ -106,9 +106,9 @@ def get_connection(
     try:
         return find_connection(service, person_id, target_id)
     except ValueError as e:
-        raise HTTPException(st.HTTP_400_BAD_REQUEST, str(e))
+        raise HTTPException(st.HTTP_400_BAD_REQUEST, str(e)) from e
     except LookupError as e:
-        raise HTTPException(st.HTTP_404_NOT_FOUND, str(e))
+        raise HTTPException(st.HTTP_404_NOT_FOUND, str(e)) from e
 
 
 @router.post("", response_model=PersonRead, status_code=201, dependencies=[Depends(require_editor_token)])
@@ -339,11 +339,11 @@ def list_access_links(person_id: int, db: Session = Depends(get_db)):
     )
     return [
         PersonAccessLinkRead(
-            id=l.id, person_id=l.person_id, url=_link_url(l.token),
-            is_active=l.is_active, role=l.role, scope_depth=l.scope_depth,
-            created_at=l.created_at,
+            id=lnk.id, person_id=lnk.person_id, url=_link_url(lnk.token),
+            is_active=lnk.is_active, role=lnk.role, scope_depth=lnk.scope_depth,
+            created_at=lnk.created_at,
         )
-        for l in links
+        for lnk in links
     ]
 
 

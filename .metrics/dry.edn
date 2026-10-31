@@ -1,0 +1,14 @@
+{:candidates [
+ {:score 0.852941176471
+  :language "python"
+  :left {:file "app/services/access_scope.py", :start-line 50, :end-line 56}
+  :right {:file "app/services/access_scope.py", :start-line 59, :end-line 64}
+  :left-nodes 68
+  :right-nodes 67}
+ {:score 0.829787234043
+  :language "python"
+  :left {:file "app/services/connection_finder.py", :start-line 25, :end-line 32}
+  :right {:file "app/services/connection_finder.py", :start-line 35, :end-line 42}
+  :left-nodes 106
+  :right-nodes 116}
+]}

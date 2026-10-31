@@ -14,7 +14,7 @@ from collections import deque
 
 from sqlalchemy.orm import Session
 
-from app.models import Person, RelationType, Relationship
+from app.models import Person
 from app.services.tree_service import TreeService
 
 
@@ -58,7 +58,6 @@ def _collateral_term(up: int, down: int, target: Person) -> str:
         return _gender_word(target, "двоюродный дядя", "двоюродная тётя")
     if up == 2 and down == 3:
         return _gender_word(target, "двоюродный племянник", "двоюродная племянница")
-    n = cousin - 1
     num = {1: "двоюродный", 2: "двоюродный", 3: "троюродный", 4: "четвероюродный"}.get(
         cousin, f"{cousin}юродный"
     )

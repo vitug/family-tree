@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import gzip
 import hashlib
 import io
 import re
@@ -19,6 +18,7 @@ import zlib
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from defusedxml import ElementTree as SafeET
 from xml.etree import ElementTree as ET
 
 from sqlalchemy import delete
@@ -311,7 +311,7 @@ class GrampsImporter:
 
     def import_package(self, package: PackageContents, *, replace: bool = False) -> ImportStats:
         try:
-            root = ET.fromstring(package.xml_bytes)
+            root = SafeET.fromstring(package.xml_bytes)
         except ET.ParseError as exc:
             raise ValueError(f"Некорректный Gramps XML: {exc}") from exc
 
@@ -419,7 +419,7 @@ class GrampsImporter:
 
     def _store_blob(self, blob: bytes, preferred_name: str) -> str:
         """Сохранить файл, вернуть относительный путь files/..."""
-        digest = hashlib.sha1(blob).hexdigest()[:12]
+        digest = hashlib.sha1(blob, usedforsecurity=False).hexdigest()[:12]
         safe = _safe_filename(preferred_name)
         rel = f"files/{digest}_{safe}"
         dest = self.media_root / rel
@@ -467,7 +467,7 @@ class GrampsImporter:
                 result[handle] = entry
                 continue
 
-            content_hash = hashlib.sha1(blob).hexdigest()
+            content_hash = hashlib.sha1(blob, usedforsecurity=False).hexdigest()
             if content_hash in saved:
                 rel = saved[content_hash]
             else:

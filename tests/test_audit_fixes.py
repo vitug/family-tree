@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import gzip
 import sqlite3
-import zlib
-from datetime import date
 
 import pytest
 from fastapi import HTTPException
@@ -383,12 +381,10 @@ def test_person_history_viewer_can_read(viewer_client, editor_client):
 
 def test_priority_family_ordering(editor_client, app_env, monkeypatch):
     """Живая приоритетная фамилия и её супруги/дети идут в списке первыми."""
-    import os
     # пере-инициализация Settings с приоритетной фамилией невозможна без
     # пересоздания приложения — проверяем через сервисный слой напрямую.
     from app.services.tree_service import TreeService
     from app.database import SessionLocal
-    from app.models import Person, Relationship, RelationType, Gender
     from app.config import Settings
     client = editor_client
     r = client.post(
@@ -443,7 +439,6 @@ def test_priority_family_ordering(editor_client, app_env, monkeypatch):
 
 def test_person_access_links(editor_client, app_env):
     """Персональная ссылка: создание, вход по ней, фокус на человеке, отзыв."""
-    from app.models import PersonAccessLink
 
     r = editor_client.post(
         "/api/v1/persons", json={"first_name": "Лена", "last_name": "Тестова"}
@@ -452,7 +447,6 @@ def test_person_access_links(editor_client, app_env):
     pid = r.json()["id"]
 
     # без авторизации — 401
-    anon = app_env  # TestClient без editor-куки
     from fastapi.testclient import TestClient
     from app.main import app as live_app
     with TestClient(live_app) as anon_client:
@@ -476,7 +470,7 @@ def test_person_access_links(editor_client, app_env):
 
     # список и отзыв
     r = editor_client.get(f"/api/v1/persons/{pid}/access-links")
-    assert r.status_code == 200 and any(l["id"] == link["id"] for l in r.json())
+    assert r.status_code == 200 and any(x["id"] == link["id"] for x in r.json())
     r = editor_client.delete(f"/api/v1/persons/access-links/{link['id']}")
     assert r.status_code == 204
 
@@ -828,7 +822,6 @@ def test_auth_cookie_path_follows_root_path(app_env, monkeypatch):
     """Вход за дверью ставит cookie с Path=<дверь>/: иначе dev-стенд на том же
     домене vitug.ru затирает прод-cookie (разные JWT-секреты → 401 на проде)."""
     from app.config import settings
-    from app.routers import auth as auth_mod
 
     monkeypatch.setattr(settings, "root_path", "/test-door-abc/")
     resp = app_env.get(f"/api/v1/auth/link/{settings.view_token}", follow_redirects=False)

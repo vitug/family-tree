@@ -18,7 +18,7 @@ search_terms = ["туга", "Туга", "vitug", "РИ", "ол"]
 for term in search_terms:
     pattern = f"%{term}%"
     lower_pattern = pattern.lower()
-    
+
     # Используем пользовательскую функцию
     cursor.execute("""
         SELECT first_name, last_name 
@@ -26,7 +26,7 @@ for term in search_terms:
         WHERE cyrillic_lower(first_name) LIKE ? 
            OR cyrillic_lower(last_name) LIKE ?
     """, (lower_pattern, lower_pattern))
-    
+
     results = cursor.fetchall()
     print(f"Поиск '{term}': {len(results)} результатов")
     for row in results[:3]:

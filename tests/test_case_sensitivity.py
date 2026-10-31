@@ -19,7 +19,7 @@ cursor.execute("SELECT first_name, last_name FROM persons WHERE last_name LIKE ?
 results_upper = cursor.fetchall()
 print(f"LIKE '%ТУГА%': {len(results_upper)} результатов")
 
-# Поиск с маленькими буквами  
+# Поиск с маленькими буквами
 cursor.execute("SELECT first_name, last_name FROM persons WHERE last_name LIKE ?", ('%туга%',))
 results_lower = cursor.fetchall()
 print(f"LIKE '%туга%': {len(results_lower)} результатов")

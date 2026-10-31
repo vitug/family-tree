@@ -19,7 +19,6 @@ def _enforce_scope(db: Session, user: dict, *person_ids: int) -> None:
     """Scoped-ссылка: связывать можно только внутри своей семьи."""
     from fastapi import HTTPException, status as st
 
-    from app.services.access_scope import can_edit_person
 
     allowed = [pid for pid in person_ids if pid is not None]
     if not allowed:
