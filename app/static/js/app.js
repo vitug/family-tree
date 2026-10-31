@@ -731,7 +731,6 @@ function confirmExitApp() {
 }
 
 window.addEventListener("popstate", () => {
-  if (!state.isAuthenticated) return;
   // 1) открыта карточка — «назад» закрывает её
   if (isDetailVisible()) { hideDetailPanel(); return; }
   // 2) выбран человек — «назад» возвращает в список
@@ -748,10 +747,18 @@ window.addEventListener("popstate", () => {
   }
   // 3) мы в списке/обзоре — этот «назад» закроет приложение: спросить
   confirmExitApp().then((ok) => {
-    if (!ok) pushNavGuard(); // «Остаться» — восстановить защиту
-    else history.back(); // sentinel уже consumed — этот back закроет PWA
+    if (!ok) {
+      pushNavGuard(); // «Остаться» — восстановить защиту
+      return;
+    }
+    // «Выйти»: холодное PWA стоит на первой записи history — back() откатывать
+    // нечего. Пробуем window.close(); если не сработал, guard НЕ восстанавливаем:
+    // следующий «назад» закроет приложение уже без вопроса.
+    window.close();
   });
 });
+
+pushNavGuard(); // ставить СРАЗУ при загрузке скрипта: «назад» до конца авторизации тоже должен спросить
 
 // ── Selection & views ──────────────────────────────────
 
@@ -2252,7 +2259,6 @@ async function init() {
   if (jwtManager.isTokenValid()) {
     try {
       await loadPeople();
-      pushNavGuard(); // «назад» из списка не должен сразу закрыть PWA
       // Человека автоматически не выбираем: при входе показываем обзор
       // всех людей с подсказкой, что нажать, чтобы увидеть древо.
       // Исключение — персональная ссылка: ?person=<id> из редиректа входа.
