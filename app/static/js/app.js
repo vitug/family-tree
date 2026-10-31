@@ -699,6 +699,7 @@ function fillRelationSelects() {
 
 // ── Кнопка «назад» (PWA): шаг назад по приложению, выход — с подтверждением ──
 let navGuardSeq = 0;
+let exitingApp = false; // true после подтверждения «Выйти»: popstate игнорируем, пока откатываем стек
 function pushNavGuard() {
   // Дополнительная запись в history: «назад» сначала отрабатывает приложение,
   // и только за пределами стека — закрывает PWA.
@@ -731,6 +732,7 @@ function confirmExitApp() {
 }
 
 window.addEventListener("popstate", () => {
+  if (exitingApp) return; // откат стека после «Выйти» — не реагируем
   // 1) открыта карточка — «назад» закрывает её
   if (isDetailVisible()) { hideDetailPanel(); return; }
   // 2) выбран человек — «назад» возвращает в список
@@ -751,9 +753,14 @@ window.addEventListener("popstate", () => {
       pushNavGuard(); // «Остаться» — восстановить защиту
       return;
     }
-    // «Выйти»: холодное PWA стоит на первой записи history — back() откатывать
-    // нечего, а window.close() Chrome в standalone игнорирует. Guard НЕ
-    // восстанавливаем: следующий «назад» закроет приложение уже без вопроса.
+    // «Выйти»: window.close() Chrome в standalone игнорирует, а в стеке
+    // history могут оставаться guard-записи — каждый «назад» снимал бы по
+    // одной и снова спрашивал. Откатываемся к базовой записи разом:
+    // следующий «назад» закроет приложение уже нативно, без вопроса.
+    exitingApp = true;
+    const depth = navGuardSeq;
+    navGuardSeq = 0;
+    if (depth > 0) history.go(-depth);
     window.close();
     setTimeout(() => {
       if (document.visibilityState === "visible") {
