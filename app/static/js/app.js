@@ -754,15 +754,13 @@ window.addEventListener("popstate", () => {
       pushNavGuard(); // «Остаться» — восстановить защиту
       return;
     }
-    // «Выйти»: window.close() Chrome в standalone игнорирует. Откатываемся к
-    // САМОЙ ПЕРВОЙ записи истории (base), учитывая и boot-guard из <head>:
-    // тогда следующий «назад» закрывает приложение нативно, без вопроса.
-    // Раньше boot-запись не считалась — «назад» молча тратился на неё.
+    // «Выйти»: window.close() Chrome в standalone игнорирует. Откат к самой
+    // первой записи истории: history.go с большим отрицательным шагом браузер
+    // сам ограничит первым элементом стека — никакого счётчика глубины,
+    // он расползался с реальной позицией после промежуточных «назад».
+    // Следующий «назад» закрывает приложение нативно, без вопроса.
     exitingApp = true;
-    const depth = navGuardSeq + (window.__ftBootPushed ? 1 : 0);
-    navGuardSeq = 0;
-    window.__ftBootPushed = false;
-    if (depth > 0) history.go(-depth);
+    history.go(-99);
     window.close();
     setTimeout(() => {
       if (document.visibilityState === "visible") {
