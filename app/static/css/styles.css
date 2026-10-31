@@ -1294,22 +1294,25 @@ body::before {
     transition: transform 0.25s ease;
   }
 
-  /* Свёрнутая полоска карточки: 56px — удобно попасть пальцем */
+  /* Свёрнутая полоска карточки: 88px — видна ручка и имя, удобно тапать/тянуть */
   .detail-panel.collapsed {
-    transform: translateY(calc(100% - 56px));
+    transform: translateY(calc(100% - 88px));
   }
 
   .detail-sheet-handle {
-    cursor: pointer;
+    cursor: grab;
     display: block;
     width: 100%;
-    height: 44px; /* вся ширина полоски — зона тапа пальцем */
+    height: 88px; /* вся свёрнутая полоска — зона жеста: тап/тянуть вверх */
     background: transparent;
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     margin: 0;
+    touch-action: none; /* жест не скроллит ни карточку, ни страницу */
+    -webkit-user-select: none;
+    user-select: none;
   }
   .detail-sheet-handle::after {
     content: "";
@@ -1822,4 +1825,33 @@ body::before {
   max-height: 96vh;
   object-fit: contain;
   border-radius: 8px;
+}
+
+/* Имя в свёрнутой полоске */
+.detail-panel.collapsed .detail-corner-btns {
+  top: 48px;
+}
+.detail-panel.collapsed h3 {
+  margin-top: 44px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Жест-зона активна только на свёрнутой полоске:
+   в открытой карточке верх не перехватывает клики (работают только кнопки) */
+.detail-panel:not(.collapsed) .detail-sheet-handle {
+  pointer-events: none;
+  height: 44px;
+}
+
+/* Кнопки ✕/⤢ не наезжают на текст: на узком экране имя начинается ниже ряда кнопок */
+@media (max-width: 900px) {
+  .detail-panel h3 {
+    margin-top: 40px;
+    padding-right: 1rem;
+  }
+  .detail-panel.collapsed h3 {
+    margin-top: 44px;
+  }
 }

@@ -987,7 +987,7 @@ function syncDetailPadding() {
   }
   if (window.innerWidth <= 900 && !dp.classList.contains("hidden")) {
     requestAnimationFrame(() => {
-      const h = dp.classList.contains("collapsed") ? 56 : dp.getBoundingClientRect().height;
+      const h = dp.classList.contains("collapsed") ? 88 : dp.getBoundingClientRect().height;
       sc.style.paddingBottom = h + 40 + "px";
     });
   } else {
@@ -1745,6 +1745,44 @@ function bindEvents() {
       syncDetailPadding();
     }
   });
+  // Жест на полоске: потянуть вверх — развернуть карточку на весь экран.
+  // touch-action: none на ручке — ничего под пальцем не скроллится и не нажимается.
+  (() => {
+    const handle = document.querySelector(".detail-sheet-handle");
+    if (!handle) return;
+    let startY = null;
+    handle.addEventListener(
+      "touchstart",
+      (e) => {
+        startY = e.touches[0].clientY;
+      },
+      { passive: false }
+    );
+    handle.addEventListener(
+      "touchmove",
+      (e) => {
+        if (startY === null) return;
+        e.preventDefault(); // страница под жестом не двигается
+        const dy = e.touches[0].clientY - startY;
+        if (dy < -40) {
+          // потянули вверх — развернуть
+          el.detail.classList.remove("collapsed");
+          el.detail.classList.add("expanded");
+          $("#btn-expand-detail")?.setAttribute("aria-label", "Свернуть карточку");
+          syncDetailPadding();
+          startY = null;
+        } else if (dy > 40 && el.detail.classList.contains("collapsed")) {
+          // потянули вниз на свёрнутой — спрятать совсем
+          hideDetailPanel();
+          startY = null;
+        }
+      },
+      { passive: false }
+    );
+    handle.addEventListener("touchend", () => {
+      startY = null;
+    });
+  })();
   $("#btn-set-root")?.addEventListener("click", () => {
     const id = Number(el.detail.dataset.personId);
     if (id) {
