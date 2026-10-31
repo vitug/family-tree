@@ -979,6 +979,12 @@ function syncDetailPadding() {
   const sc = document.querySelector(".view-area");
   const dp = el.detail;
   if (!sc || !dp) return;
+  // Развёрнутая на весь экран карточка дерево не перекрывает частично —
+  // дополнительный padding снизу не нужен.
+  if (dp.classList.contains("expanded")) {
+    sc.style.paddingBottom = "";
+    return;
+  }
   if (window.innerWidth <= 900 && !dp.classList.contains("hidden")) {
     requestAnimationFrame(() => {
       const h = dp.classList.contains("collapsed") ? 34 : dp.getBoundingClientRect().height;

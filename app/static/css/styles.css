@@ -1751,3 +1751,16 @@ body::before {
   max-height: calc(100% - 2rem);
 }
 .detail-panel.expanded .expand-btn { transform: rotate(180deg); }
+
+/* На телефоне развёрнутая карточка — на весь экран по высоте */
+@media (max-width: 900px) {
+  .detail-panel.expanded {
+    left: 0.5rem;
+    right: 0.5rem;
+    top: 0.5rem;
+    bottom: max(0.5rem, var(--safe-bottom));
+    width: auto;
+    height: auto;
+    max-height: none;
+  }
+}
