@@ -926,16 +926,16 @@ function centerInScroller(target, scroller) {
 
 /** После возврата из дерева — человек, из которого вышли, в середине списка
  *  и в боковой панели, и в обзоре людей. */
-function centerSelectedInLists() {
-  if (!state.selectedId) return;
+function centerSelectedInLists(id = state.selectedId) {
+  if (!id) return;
   requestAnimationFrame(() => {
     centerInScroller(
-      el.personList?.querySelector(`.person-item[data-id="${state.selectedId}"]`),
+      el.personList?.querySelector(`.person-item[data-id="${id}"]`),
       el.personList
     );
     const sc = document.querySelector(".view-area");
     if (sc && !sc.classList.contains("hidden")) {
-      centerInScroller(sc.querySelector(`.overview-card[data-id="${state.selectedId}"]`), sc);
+      centerInScroller(sc.querySelector(`.overview-card[data-id="${id}"]`), sc);
     }
   });
 }
