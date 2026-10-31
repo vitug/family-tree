@@ -820,7 +820,7 @@ def test_pwa_manifest_root_path_trailing_slash(app_env, monkeypatch):
 
 def test_auth_cookie_path_follows_root_path(app_env, monkeypatch):
     """Вход за дверью ставит cookie с Path=<дверь>/: иначе dev-стенд на том же
-    домене vitug.ru затирает прод-cookie (разные JWT-секреты → 401 на проде)."""
+    том же домене затирает прод-cookie (разные JWT-секреты → 401 на проде)."""
     from app.config import settings
 
     monkeypatch.setattr(settings, "root_path", "/test-door-abc/")

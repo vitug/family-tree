@@ -71,3 +71,9 @@ family_tree_gramps.gpkg
 
 # Backup folder
 backup/
+# Dev artifacts (не для GitHub)
+.metrics/
+*.bundle
+BUGFIX_LOGLEVEL.md
+check_db.py
+backup/

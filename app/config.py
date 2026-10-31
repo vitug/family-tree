@@ -64,7 +64,7 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
-    # Префикс пути при деплое за reverse-proxy (например /fTk9abcX на vitug.ru).
+    # Префикс пути при деплое за reverse-proxy (например /fTk9abcX за reverse-proxy).
     # Пустой = корень. Приложение само подставляет его в SPA и редиректы,
     # nginx при этом проксирует БЕЗ URI-части (полный путь уходит целиком).
     root_path: str = ""

@@ -267,7 +267,7 @@ pip install --upgrade pip
 
 ## 📝 Лицензия
 
-[Ваша лицензия]
+MIT — см. [LICENSE](LICENSE).
 
 ## 🤝 Поддержка
 
