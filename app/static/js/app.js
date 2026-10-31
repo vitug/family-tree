@@ -1002,9 +1002,14 @@ function hideDetailPanel() {
 }
 
 async function showDetail(id) {
-  let person = state.people.find((p) => p.id === id);
-  if (!person) {
+  // Всегда свежие данные с сервера: после замены фото/правок карточка не должна
+  // показывать устаревшие данные из кэша state.people («обновил — фото старое»).
+  let person;
+  try {
     person = await api(`/persons/${id}`);
+  } catch (e) {
+    person = state.people.find((p) => p.id === id);
+    if (!person) throw e;
   }
   const rel = await api(`/tree/${id}/relatives`);
 
