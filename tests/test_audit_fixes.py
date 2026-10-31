@@ -784,3 +784,25 @@ def test_pwa_manifest_root_path_trailing_slash(app_env, monkeypatch):
     assert m["start_url"] == "/door/"
     assert m["scope"] == "/door/"
     assert m["icons"][0]["src"] == "/door/static/icons/icon-192.png"
+
+
+# ── Cookie path = root_path (прод/dev на одном домене не конфликтуют) ────────
+
+
+def test_auth_cookie_path_follows_root_path(app_env, monkeypatch):
+    """Вход за дверью ставит cookie с Path=<дверь>/: иначе dev-стенд на том же
+    домене vitug.ru затирает прод-cookie (разные JWT-секреты → 401 на проде)."""
+    from app.config import settings
+    from app.routers import auth as auth_mod
+
+    monkeypatch.setattr(settings, "root_path", "/test-door-abc/")
+    resp = app_env.get(f"/api/v1/auth/link/{settings.view_token}", follow_redirects=False)
+    assert resp.status_code == 303
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "ft_access_token=" in cookie_header
+    assert "Path=/test-door-abc/" in cookie_header
+
+    # без двери — корневой путь (локальная разработка)
+    monkeypatch.setattr(settings, "root_path", "")
+    resp2 = app_env.get(f"/api/v1/auth/link/{settings.view_token}", follow_redirects=False)
+    assert "Path=/" in resp2.headers.get("set-cookie", "")

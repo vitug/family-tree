@@ -19,6 +19,35 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # HttpOnly cookie — JS не читает токен; <img> same-origin отправляет cookie автоматически
 AUTH_COOKIE_NAME = "ft_access_token"
+
+
+def _cookie_path() -> str:
+    """Путь cookie = путь двери (root_path). Прод и dev-стенд живут на одном
+    домене: без этого вход в один инстанс затирает cookie другого (разные
+    JWT-секреты → 401 «слетела авторизация»)."""
+    return settings.root_path or "/"
+
+
+def set_auth_cookie(response: Response, request: Request, token: str, max_age: int) -> None:
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        max_age=max_age,
+        path=_cookie_path(),
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(request),
+    )
+
+
+def clear_auth_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(
+        key=AUTH_COOKIE_NAME,
+        path=_cookie_path(),
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(request),
+    )
 security_optional = HTTPBearer(auto_error=False)
 
 
@@ -50,28 +79,6 @@ def _cookie_secure(request: Request) -> bool:
         return True
     forwarded = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
     return forwarded == "https"
-
-
-def set_auth_cookie(response: Response, request: Request, token: str, max_age: int) -> None:
-    response.set_cookie(
-        key=AUTH_COOKIE_NAME,
-        value=token,
-        max_age=max_age,
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=_cookie_secure(request),
-    )
-
-
-def clear_auth_cookie(response: Response, request: Request) -> None:
-    response.delete_cookie(
-        key=AUTH_COOKIE_NAME,
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=_cookie_secure(request),
-    )
 
 
 def extract_access_token(
