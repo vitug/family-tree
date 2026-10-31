@@ -702,6 +702,7 @@ function fillRelationSelects() {
 async function selectPerson(id, { openDetail = false } = {}) {
   state.selectedId = id;
   renderPersonList();
+  centerSelectedInLists(); // активный человек — в середине бокового списка
   el.toolbarHint.textContent = "";
   // На телефоне после выбора закрываем drawer, чтобы сразу видеть дерево
   if (isMobileLayout()) {
@@ -898,6 +899,45 @@ function renderTree(treeData) {
   });
 
   el.canvas.innerHTML = html || "<p style='color:var(--text-muted)'>Нет данных для отображения</p>";
+  centerSelectedCard();
+}
+
+/** Центрировать выбранного человека в области просмотра:
+ *  при заходе в человека его карточка — в середине экрана. */
+function centerSelectedCard() {
+  const card =
+    el.canvas.querySelector(`.person-card[data-id="${state.selectedId}"]`) ||
+    el.canvas.querySelector(".person-card.root");
+  if (!card) return;
+  centerInScroller(card, document.querySelector(".view-area"));
+}
+
+/** Центрировать элемент в его скролл-контейнере (и по вертикали, и по горизонтали). */
+function centerInScroller(target, scroller) {
+  if (!target || !scroller) return;
+  const cr = target.getBoundingClientRect();
+  const sr = scroller.getBoundingClientRect();
+  scroller.scrollBy({
+    top: cr.top - sr.top - sr.height / 2 + cr.height / 2,
+    left: cr.left - sr.left - sr.width / 2 + cr.width / 2,
+    behavior: "auto",
+  });
+}
+
+/** После возврата из дерева — человек, из которого вышли, в середине списка
+ *  и в боковой панели, и в обзоре людей. */
+function centerSelectedInLists() {
+  if (!state.selectedId) return;
+  requestAnimationFrame(() => {
+    centerInScroller(
+      el.personList?.querySelector(`.person-item[data-id="${state.selectedId}"]`),
+      el.personList
+    );
+    const sc = document.querySelector(".view-area");
+    if (sc && !sc.classList.contains("hidden")) {
+      centerInScroller(sc.querySelector(`.overview-card[data-id="${state.selectedId}"]`), sc);
+    }
+  });
 }
 
 function renderRelativesView(rel) {
@@ -1734,11 +1774,17 @@ function bindEvents() {
     );
   });
   $("#btn-back-overview")?.addEventListener("click", async () => {
-    state.selectedId = null;
-    hideDetailPanel();
-    history.replaceState(null, "", location.pathname + location.hash);
-    await renderMainView();
-  });
+      const fromId = state.selectedId; // кого центрируем в списке после возврата
+      state.selectedId = null;
+      hideDetailPanel();
+      history.replaceState(null, "", location.pathname + location.hash);
+      await renderMainView();
+      if (fromId) {
+        state.selectedId = fromId; // только для центрирования, выбор сброшен
+        centerSelectedInLists();
+        state.selectedId = null;
+      }
+    });
 
   const notesToggle = $("#btn-toggle-notes");
   const syncNotesToggle = () => {
