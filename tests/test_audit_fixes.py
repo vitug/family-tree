@@ -889,3 +889,93 @@ def test_manifest_id_and_name_per_instance(viewer_client):
     assert "id" in m and m["id"]
     assert m["id"] == m["start_url"], "id должен совпадать со start_url (дверь инстанса)"
     assert m["name"], "имя приложения обязательно"
+
+
+# ── Валидатор дерева (tree_validator) ───────────────────────────────────────
+
+
+def _mk(editor_client, first, last, gender="male", birth=None, death=None):
+    r = editor_client.post(
+        "/api/v1/persons",
+        json={
+            "first_name": first,
+            "last_name": last,
+            "gender": gender,
+            **({"birth_date": birth} if birth else {}),
+            **({"death_date": death} if death else {}),
+        },
+    )
+    assert r.status_code in (200, 201), r.text
+    return r.json()
+
+
+def _link(editor_client, a, b, rt="parent_of"):
+    return editor_client.post(
+        "/api/v1/relationships",
+        json={"person_id": a, "related_person_id": b, "relation_type": rt},
+    )
+
+
+def test_validator_rejects_death_before_birth(editor_client):
+    r = editor_client.post(
+        "/api/v1/persons",
+        json={"first_name": "А", "last_name": "Б", "gender": "male",
+              "birth_date": "1950-01-01", "death_date": "1949-01-01"},
+    )
+    assert r.status_code in (400, 422)  # 422 — схема, 400 — валидатор сервиса
+    assert "смерти" in r.text
+
+
+def test_validator_rejects_third_parent(editor_client):
+    c = _mk(editor_client, "Сын", "Валидаторов", birth="2000-01-01")
+    ps = [_mk(editor_client, f"О{i}", "Валидаторов", birth=f"197{i}-01-01") for i in range(3)]
+    assert _link(editor_client, ps[0]["id"], c["id"]).status_code in (200, 201)
+    assert _link(editor_client, ps[1]["id"], c["id"]).status_code in (200, 201)
+    r = _link(editor_client, ps[2]["id"], c["id"])
+    assert r.status_code == 400
+    assert "родителей" in r.text
+
+
+def test_validator_rejects_parent_too_young_or_old(editor_client):
+    c = _mk(editor_client, "Реб", "Валидаторов", birth="2000-01-01")
+    young = _mk(editor_client, "Юн", "Валидаторов", birth="1995-01-01")
+    old = _mk(editor_client, "Стар", "Валидаторов", birth="1900-01-01")
+    assert _link(editor_client, young["id"], c["id"]).status_code == 400
+    assert _link(editor_client, old["id"], c["id"]).status_code == 400
+    ok = _mk(editor_client, "Норм", "Валидаторов", birth="1970-01-01")
+    assert _link(editor_client, ok["id"], c["id"]).status_code in (200, 201)
+
+
+def test_validator_rejects_parent_dead_before_birth(editor_client):
+    c = _mk(editor_client, "Реб2", "Валидаторов", birth="2000-01-01")
+    p = _mk(editor_client, "Ум", "Валидаторов", birth="1950-01-01", death="1999-01-01")
+    r = _link(editor_client, p["id"], c["id"])
+    assert r.status_code == 400
+    assert "до рождения" in r.text
+
+
+def test_validator_full_tree_report(editor_client):
+    """validate_tree: чистое дерево — без ошибок; двойная фамилия — не warning."""
+    d = _mk(editor_client, "Дед", "Иванов", birth="1930-01-01", death="2000-01-01")
+    s = _mk(editor_client, "Сын", "Иванов", birth="1955-01-01")
+    g = _mk(editor_client, "Внучка", "Иванова-Петрова", gender="female", birth="1980-01-01")
+    m = _mk(editor_client, "Муж", "Петров", birth="1978-01-01")
+    for a, b in [(d["id"], s["id"]), (s["id"], g["id"])]:
+        assert _link(editor_client, a, b).status_code in (200, 201)
+    assert _link(editor_client, m["id"], g["id"], "spouse_of").status_code in (200, 201)
+
+    from app.database import SessionLocal
+    from app.services.tree_validator import validate_tree
+
+    with SessionLocal() as db:
+        rep = validate_tree(db)
+    assert rep["errors"] == []
+    # жена с двойной фамилией Иванова-Петрова и муж Петров — совпадение по части
+    assert not any("Петров" in w and "фамилия" in w for w in rep["warnings"])
+
+    # ломаем: отец-подросток — API сам блокирует, в дереве ошибки не появляются
+    teen = _mk(editor_client, "Тин", "Иванов", birth="1968-06-01")
+    assert _link(editor_client, teen["id"], g["id"]).status_code == 400
+    with SessionLocal() as db:
+        rep2 = validate_tree(db)
+    assert rep2["errors"] == []

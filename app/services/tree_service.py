@@ -61,6 +61,12 @@ class TreeService:
         )
 
     def create_person(self, data: PersonCreate) -> Person:
+        from app.services.tree_validator import validate_person_dates
+
+        try:
+            validate_person_dates(data.birth_date, data.death_date)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
         person = Person(**data.model_dump())
         self.db.add(person)
         self.db.flush()  # нужен id до записи ревизии
@@ -277,6 +283,13 @@ class TreeService:
                     status.HTTP_400_BAD_REQUEST,
                     "Нельзя: связь создаёт цикл в генеалогии",
                 )
+
+        # Валидатор дерева: возраст родителей, >2 родителей, смерть до рождения
+        from app.services.tree_validator import check_new_relationship
+
+        verrors = check_new_relationship(self.db, data)
+        if verrors:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "; ".join(verrors))
 
         rel = Relationship(
             person_id=person_id,
