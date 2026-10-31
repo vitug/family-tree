@@ -417,6 +417,7 @@ class TreeService:
             full_name=person.full_name,
             first_name=person.first_name,
             last_name=person.last_name,
+            maiden_name=person.maiden_name,
             gender=person.gender,
             birth_date=person.birth_date,
             death_date=person.death_date,

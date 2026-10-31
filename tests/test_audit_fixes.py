@@ -1052,3 +1052,16 @@ def test_connection_not_found_and_self(editor_client):
     assert r.status_code == 400
     r = editor_client.get(f'/api/v1/persons/{f["me"]["id"]}/connection/99999')
     assert r.status_code == 404
+
+
+def test_tree_cards_include_maiden_name(editor_client):
+    """Девичья фамилия должна приходить в узлах дерева (рендер на плитке)."""
+    w = _mk(editor_client, "Мария", "Смирнова", gender="female", birth="1950-01-01")
+    upd = editor_client.patch(
+        f'/api/v1/persons/{w["id"]}',
+        json={"first_name": "Мария", "last_name": "Иванова", "maiden_name": "Смирнова"},
+    )
+    assert upd.status_code == 200
+    t = editor_client.get(f'/api/v1/tree/{w["id"]}').json()
+    node = t["tree"]["person"]
+    assert node["maiden_name"] == "Смирнова"

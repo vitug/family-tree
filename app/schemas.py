@@ -103,6 +103,7 @@ class FamilyMember(BaseModel):
     full_name: str
     first_name: str
     last_name: str | None
+    maiden_name: str | None = None
     gender: Gender
     birth_date: date | None
     death_date: date | None

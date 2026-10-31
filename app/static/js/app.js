@@ -939,6 +939,7 @@ function cardHtml(entry) {
       <button class="card-root-btn" data-root-id="${p.id}" type="button" title="Сделать корнем дерева" aria-label="Сделать корнем дерева">🌳</button>
       ${avatarHtml(p, "card-avatar")}
       <div class="card-name">${escapeHtml(p.full_name)}</div>
+      ${p.maiden_name ? `<div class="card-maiden">урождённая ${escapeHtml(p.maiden_name)}</div>` : ""}
       <div class="card-dates">${escapeHtml(formatDates(p))}</div>
       <div class="card-id">#${p.id}</div>
       ${notesHtml}

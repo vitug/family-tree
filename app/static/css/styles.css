@@ -863,6 +863,13 @@ body::before {
   background: color-mix(in srgb, var(--accent, #4a7dff) 12%, transparent);
 }
 
+.person-card .card-maiden {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.25;
+}
+
 .person-card .card-dates {
   font-size: 0.75rem;
   color: var(--text-muted);
