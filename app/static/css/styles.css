@@ -1773,7 +1773,12 @@ body::before {
 
 /* Разворачивание карточки человека на весь экран */
 .detail-panel .expand-btn {
-  font-size: 1rem;
+  font-size: 1.25rem; /* стрелки крупнее */
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0; /* не прижаты к верху */
 }
 .detail-panel.expanded {
   width: calc(100% - 2rem);
