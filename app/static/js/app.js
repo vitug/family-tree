@@ -1439,6 +1439,28 @@ function personFormBody(fd) {
   };
 }
 
+// Подставить отчество по имени отца (кнопка ⚡ рядом с полем «Отчество»)
+async function onPatronymicSuggest() {
+  const id = state.editingPersonId;
+  if (!id) {
+    toast("Сначала сохраните человека и укажите его отца, затем подставьте отчество");
+    return;
+  }
+  try {
+    const res = await apiWithJWT(`/persons/${id}/patronymic-suggestion`);
+    if (!res.patronymic) {
+      toast(res.father_name
+        ? "Не удалось вывести отчество (не указан пол человека)"
+        : "Отец не указан: сначала добавьте связь «родитель → человек»");
+      return;
+    }
+    $("#p-middle").value = res.patronymic;
+    toast(`Отчество по отцу ${res.father_name}: ${res.patronymic}`);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
 async function onSavePerson(e) {
   e.preventDefault();
   const form = e.target;
@@ -2035,6 +2057,7 @@ function bindEvents() {
   });
 
   $("#form-person")?.addEventListener("submit", onSavePerson);
+  $("#btn-patronymic")?.addEventListener("click", onPatronymicSuggest);
   $("#form-relation")?.addEventListener("submit", onCreateRelation);
   $("#form-path")?.addEventListener("submit", onFindPath);
   $("#r-type")?.addEventListener("change", updateRelationLabels);

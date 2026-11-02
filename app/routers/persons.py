@@ -84,6 +84,39 @@ def get_person(
     return person
 
 
+@router.get("/{person_id}/patronymic-suggestion", dependencies=[Depends(require_jwt_token)])
+def get_patronymic_suggestion(
+    person_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Подсказка отчества по имени отца (кнопка «Подставить» при редактировании).
+
+    Отчество выводится только из связи PARENT_OF с родителем мужского пола;
+    существующее отчество пользователя никогда не перезаписывается.
+    """
+    from app.models import RelationType, Relationship
+    from app.services.patronymic import patronymic_from_father
+
+    person = db.get(Person, person_id)
+    if person is None:
+        raise HTTPException(404, "Человек не найден")
+    father = db.scalar(
+        select(Person)
+        .join(Relationship, Relationship.person_id == Person.id)
+        .where(
+            Relationship.related_person_id == person_id,
+            Relationship.relation_type == RelationType.PARENT_OF,
+            Person.gender == "male",
+        )
+    )
+    patronymic = patronymic_from_father(father.first_name, person.gender) if father else None
+    return {
+        "patronymic": patronymic,
+        "father_name": father.first_name if father else None,
+        "father_id": father.id if father else None,
+    }
+
+
 @router.get(
     "/{person_id}/connection/{target_id}",
     dependencies=[Depends(require_jwt_token)],
