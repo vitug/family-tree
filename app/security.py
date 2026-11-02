@@ -367,7 +367,7 @@ def validate_token_strength(token: str) -> tuple[bool, str]:
     token = token.strip()
     if len(token) < 12:
         return False, "Токен слишком короткий (минимум 12 символов)"
-    if token in ("family", "secret", "password", "123456", "familyvitug"):
+    if token in ("family", "secret", "password", "123456", "familytree123"):
         return False, "Использовать стандартный/слабый токен небезопасно"
     if token.isalpha() or token.isdigit():
         return False, "Токен должен содержать смешанный алфавит"
