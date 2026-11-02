@@ -257,6 +257,19 @@
     </div>
   </div>
 
+  <!-- Modal: редактор связей при импорте -->
+  <div class="modal-overlay hidden" id="modal-import-links">
+    <div class="modal" role="dialog" aria-labelledby="modal-import-links-title" aria-modal="true">
+      <h2 id="modal-import-links-title">Импорт: сопоставление людей</h2>
+      <p class="modal-lead" id="import-links-lead"></p>
+      <div class="import-links-list" id="import-links-list"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close="modal-import-links">Отмена</button>
+        <button class="btn btn-primary" type="button" id="btn-import-links-apply">Импортировать</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: relationship -->
   <div class="modal-overlay hidden" id="modal-relation">
     <div class="modal" role="dialog" aria-labelledby="modal-relation-title" aria-modal="true">

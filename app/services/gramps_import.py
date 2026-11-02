@@ -25,7 +25,8 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Gender, Media, Person, RelationType, Relationship
+from app.models import Gender, Media, Person, PersonExternalRef, RelationType, Relationship
+from app.services.import_matcher import ParsedPerson
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".tif", ".tiff", ".bmp"}
 
@@ -77,6 +78,7 @@ class ImportStats:
     media_linked: int = 0  # привязок person↔photo
     media_missing: int = 0  # object в XML без файла в архиве
     updated_people: int = 0  # существующих обновлено при повторном импорте
+    linked_people: int = 0  # склеено с существующими по решению пользователя
     warnings: list[str] = field(default_factory=list)
 
 
@@ -306,11 +308,61 @@ class GrampsImporter:
         *,
         filename: str = "",
         replace: bool = False,
+        decisions: dict[str, int | None] | None = None,
     ) -> ImportStats:
         package = extract_package(data, filename)
-        return self.import_package(package, replace=replace)
+        return self.import_package(package, replace=replace, decisions=decisions)
 
-    def import_package(self, package: PackageContents, *, replace: bool = False) -> ImportStats:
+    def preview(self, data: bytes, *, filename: str = "") -> list[ParsedPerson]:
+        """Разбор людей без записи в базу — для редактора связей."""
+        package = extract_package(data, filename)
+        try:
+            root = SafeET.fromstring(package.xml_bytes)
+        except ET.ParseError as exc:
+            raise ValueError(f"Некорректный Gramps XML: {exc}") from exc
+        if _local(root.tag) != "database":
+            raise ValueError("Корневой элемент XML должен быть <database>")
+
+        events = self._parse_events(root)
+        places = self._parse_places(root)
+        out: list[ParsedPerson] = []
+        people_el = self._children_sections(root).get("people")
+        if people_el is None:
+            return out
+        for person_el in people_el:
+            if _local(person_el.tag) != "person":
+                continue
+            handle = person_el.get("handle")
+            if not handle:
+                continue
+            gramps_id = person_el.get("id") or ""
+            names = self._extract_names(person_el)
+            gender = _map_gender(_text(_find(person_el, "gender")))
+            birth_date, death_date, birth_place = self._person_vital_events(
+                person_el, events, places
+            )
+            out.append(
+                ParsedPerson(
+                    key=gramps_id,
+                    first_name=names["first_name"] or gramps_id or "Без имени",
+                    last_name=names["last_name"],
+                    middle_name=names["middle_name"],
+                    maiden_name=names["maiden_name"],
+                    gender=gender.value if hasattr(gender, "value") else str(gender),
+                    birth_date=birth_date,
+                    death_date=death_date,
+                    birth_place=birth_place,
+                )
+            )
+        return out
+
+    def import_package(
+        self,
+        package: PackageContents,
+        *,
+        replace: bool = False,
+        decisions: dict[str, int | None] | None = None,
+    ) -> ImportStats:
         try:
             root = SafeET.fromstring(package.xml_bytes)
         except ET.ParseError as exc:
@@ -331,7 +383,7 @@ class GrampsImporter:
         places = self._parse_places(root)
         # handle object → meta + blob (если файл есть в архиве)
         object_map = self._parse_objects(root, package, stats)
-        handle_to_person = self._import_people(root, events, places, stats)
+        handle_to_person = self._import_people(root, events, places, stats, decisions or {})
         self._import_families(root, handle_to_person, stats)
         self._link_media(root, handle_to_person, object_map, stats)
 
@@ -486,7 +538,9 @@ class GrampsImporter:
         events: dict[str, dict],
         places: dict[str, str],
         stats: ImportStats,
+        decisions: dict[str, int | None] | None = None,
     ) -> dict[str, Person]:
+        decisions = decisions or {}
         handle_map: dict[str, Person] = {}
         people_el = self._children_sections(root).get("people")
         if people_el is None:
@@ -521,15 +575,36 @@ class GrampsImporter:
                     return None
                 return val[:n]
 
-            # Повторный импорт: матчинг по (external_source, external_id),
-            # существующего человека обновляем, а не создаём дубль
+            # Повторный импорт: матчинг по ссылкам person_external_refs
+            # (source=gramps), существующего человека обновляем, а не создаём
+            # дубль. Решение пользователя (decisions) приоритетнее.
             existing = None
-            if gramps_id:
+            decided = False
+            force_new = False
+            if gramps_id and decisions.get(gramps_id) is not None:
+                decision = decisions[gramps_id]
+                if decision == -1:
+                    force_new = True
+                else:
+                    existing = self.db.get(Person, decision)
+                    decided = existing is not None
+            if existing is None and not force_new and gramps_id:
                 existing = (
                     self.db.query(Person)
-                    .filter_by(external_source="gramps", external_id=gramps_id[:64])
+                    .join(PersonExternalRef, PersonExternalRef.person_id == Person.id)
+                    .filter(
+                        PersonExternalRef.source == "gramps",
+                        PersonExternalRef.external_id == gramps_id[:64],
+                    )
                     .first()
                 )
+                # легаси: колонки до появления таблицы ссылок
+                if existing is None:
+                    existing = (
+                        self.db.query(Person)
+                        .filter_by(external_source="gramps", external_id=gramps_id[:64])
+                        .first()
+                    )
 
             if existing is not None:
                 existing.first_name = (names["first_name"] or existing.first_name)[:100]
@@ -540,7 +615,14 @@ class GrampsImporter:
                 existing.birth_date = birth_date
                 existing.death_date = death_date
                 existing.birth_place = clip(birth_place, 255)
-                stats.updated_people += 1
+                if decided:
+                    stats.linked_people += 1
+                else:
+                    stats.updated_people += 1
+                if gramps_id:
+                    existing.external_id = gramps_id[:64]
+                    existing.external_source = "gramps"
+                    self._ensure_ref(existing.id, "gramps", gramps_id)
                 handle_map[handle] = existing
                 continue
 
@@ -559,10 +641,25 @@ class GrampsImporter:
             )
             self.db.add(person)
             self.db.flush()
+            if gramps_id:
+                self._ensure_ref(person.id, "gramps", gramps_id)
             handle_map[handle] = person
             stats.people += 1
 
         return handle_map
+
+    def _ensure_ref(self, person_id: int, source: str, external_id: str) -> None:
+        exists = (
+            self.db.query(PersonExternalRef)
+            .filter_by(source=source, external_id=external_id[:64])
+            .first()
+        )
+        if exists is None:
+            self.db.add(
+                PersonExternalRef(
+                    person_id=person_id, source=source, external_id=external_id[:64]
+                )
+            )
 
     def _link_media(
         self,

@@ -1897,3 +1897,36 @@ body::before {
 .exit-confirm-title { margin: 0 0 0.9rem; font-weight: 600; }
 .exit-confirm-btns { display: flex; gap: 0.6rem; justify-content: center; }
 .exit-confirm-btns .btn { min-width: 7rem; }
+
+/* ── Редактор связей при импорте ─────────────────────────────────────── */
+.import-links-list {
+  max-height: 55vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.import-link-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.import-link-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.import-link-info strong { font-size: 0.95rem; }
+.import-link-dates {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+.import-link-row select {
+  max-width: 45%;
+  min-width: 180px;
+}

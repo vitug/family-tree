@@ -122,8 +122,28 @@ class Relationship(Base):
         "Person", foreign_keys=[person_id], back_populates="relations_from"
     )
     related_person: Mapped[Person] = relationship(
-        "Person", foreign_keys=[related_person_id], back_populates="relations_to"
+        "Person", foreign_keys="Relationship.related_person_id", back_populates="relations_to"
     )
+
+
+class PersonExternalRef(Base):
+    """Внешние идентификаторы человека: может быть и Gramps ID, и GEDCOM xref.
+
+    Один человек — много ссылок; уникальность (source, external_id) не даёт
+    двум разным людям схлопнуться на одном внешнем ID.
+    """
+
+    __tablename__ = "person_external_refs"
+    __table_args__ = (UniqueConstraint("source", "external_id", name="uq_ext_ref"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("persons.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    person: Mapped[Person] = relationship("Person", backref="external_refs")
 
 
 class PersonAccessLink(Base):

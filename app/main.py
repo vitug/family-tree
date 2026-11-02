@@ -59,6 +59,16 @@ def _migrate_columns() -> None:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
                     logger.info("Migrated: %s.%s added", table, col)
 
+    # Бэкап-перенос легаси-колонок external_* в таблицу person_external_refs
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT OR IGNORE INTO person_external_refs (person_id, source, external_id) "
+                "SELECT id, external_source, external_id FROM persons "
+                "WHERE external_source IS NOT NULL AND external_id IS NOT NULL"
+            )
+        )
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:

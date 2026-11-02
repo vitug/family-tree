@@ -1635,39 +1635,7 @@ async function onImportGramps(e) {
   const file = input.files && input.files[0];
   input.value = "";
   if (!file) return;
-
-  const proceed = confirm(`Импортировать файл «${file.name}» из Gramps?`);
-  if (!proceed) return;
-
-  const replace = confirm(
-    "Заменить текущее дерево?\n\nOK — очистить базу и импортировать\nОтмена — добавить к существующим данным"
-  );
-
-  const form = new FormData();
-  form.append("file", file);
-
-  try {
-    const data = await fetchWithEditorAccess(`${API}/import/gramps?replace=${replace ? "true" : "false"}`, {
-      method: "POST",
-      body: form,
-    });
-    toast(data.message || "Импорт завершён");
-    if (data.warnings?.length) {
-      console.warn("Gramps import warnings:", data.warnings);
-      toast(`Предупреждений: ${data.warnings.length} (см. консоль)`, "error");
-    }
-    state.selectedId = null;
-    hideDetailPanel();
-    await loadPeople(el.search.value.trim());
-    if (state.people.length) {
-      await selectPerson(state.people[0].id);
-    } else {
-      el.canvas.classList.add("hidden");
-      el.empty.classList.remove("hidden");
-    }
-  } catch (err) {
-    toast(err.message, "error");
-  }
+  await runImportFlow("gramps", file);
 }
 
 async function onImportGedcom(e) {
@@ -1675,39 +1643,146 @@ async function onImportGedcom(e) {
   const file = input.files && input.files[0];
   input.value = "";
   if (!file) return;
+  await runImportFlow("gedcom", file);
+}
 
-  const proceed = confirm(`Импортировать файл «${file.name}» (GEDCOM)?`);
+// ── импорт с редактором связей: preview → сопоставление → применение ──────
+
+async function runImportFlow(kind, file) {
+  const proceed = confirm(`Импортировать файл «${file.name}» (${kind === "gramps" ? "Gramps" : "GEDCOM"})?`);
   if (!proceed) return;
 
   const replace = confirm(
-    "Заменить текущее дерево?\n\nOK — очистить базу и импортировать\nОтмена — добавить к существующим данным (совпадения по GEDCOM ID обновятся)"
+    "Заменить текущее дерево?\n\nOK — очистить базу и импортировать\nОтмена — добавить к существующим данным"
   );
 
-  const form = new FormData();
-  form.append("file", file);
-
+  let preview;
   try {
-    const data = await fetchWithEditorAccess(`${API}/import/gedcom?replace=${replace ? "true" : "false"}`, {
+    const form = new FormData();
+    form.append("file", file);
+    preview = await fetchWithEditorAccess(`${API}/import/${kind}/preview`, {
       method: "POST",
       body: form,
     });
-    toast(data.message || "Импорт завершён");
-    if (data.warnings?.length) {
-      console.warn("GEDCOM import warnings:", data.warnings);
-      toast(`Предупреждений: ${data.warnings.length} (см. консоль)`, "error");
-    }
-    state.selectedId = null;
-    hideDetailPanel();
-    await loadPeople(el.search.value.trim());
-    if (state.people.length) {
-      await selectPerson(state.people[0].id);
-    } else {
-      el.canvas.classList.add("hidden");
-      el.empty.classList.remove("hidden");
-    }
   } catch (err) {
     toast(err.message, "error");
+    return;
   }
+  if (!preview.people?.length) {
+    toast("В файле не найдено людей", "error");
+    return;
+  }
+
+  let allPersons = [];
+  try {
+    allPersons = await api("/persons");
+  } catch {
+    allPersons = [];
+  }
+
+  showImportLinksModal(kind, file, replace, preview, allPersons);
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[ch]);
+}
+
+function showImportLinksModal(kind, file, replace, preview, allPersons) {
+  const modal = $("#modal-import-links");
+  const list = $("#import-links-list");
+  if (!modal || !list) return;
+
+  $("#import-links-lead").textContent =
+    `${preview.message} Для каждого человека выберите запись в базе или «новая запись».`;
+
+  const candidateIds = new Set();
+  preview.people.forEach((p) => p.candidates.forEach((c) => candidateIds.add(c.person_id)));
+
+  list.innerHTML = preview.people
+    .map((p) => {
+      const dates = [
+        p.birth_date ? `род. ${p.birth_date}` : null,
+        p.death_date ? `ум. ${p.death_date}` : null,
+      ].filter(Boolean).join(", ");
+      const best = p.candidates[0];
+      const options = [];
+      options.push(
+        `<option value="new"${best ? "" : " selected"}>— новая запись —</option>`
+      );
+      if (best) {
+        options.push(
+          `<option value="${best.person_id}" selected>` +
+          `${esc(best.full_name)} (#${best.person_id}) — ${esc(best.detail)}</option>`
+        );
+      }
+      const others = allPersons.filter((x) => !candidateIds.has(x.id) || (best && x.id === best.person_id));
+      const otherOptions = others
+        .filter((x) => !p.candidates.some((c) => c.person_id === x.id))
+        .map((x) => `<option value="${x.id}">${esc(x.full_name)} (#${x.id})</option>`)
+        .join("");
+      if (otherOptions) {
+        options.push(`<optgroup label="Другие записи базы">${otherOptions}</optgroup>`);
+      }
+      return (
+        `<div class="import-link-row">` +
+        `<div class="import-link-info">` +
+        `<strong>${esc(p.name)}</strong>` +
+        `<span class="import-link-dates">${esc(dates)}${p.birth_place ? ` · ${esc(p.birth_place)}` : ""}</span>` +
+        `</div>` +
+        `<select data-import-key="${esc(p.key)}">${options.join("")}</select>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  modal.classList.remove("hidden");
+
+  const applyBtn = $("#btn-import-links-apply");
+  const onApply = async () => {
+    applyBtn.removeEventListener("click", onApply);
+    const decisions = {};
+    list.querySelectorAll("select[data-import-key]").forEach((sel) => {
+      const v = sel.value;
+      if (v === "new") {
+        decisions[sel.dataset.importKey] = -1;
+      } else {
+        decisions[sel.dataset.importKey] = Number(v);
+      }
+    });
+
+    applyBtn.disabled = true;
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("decisions", JSON.stringify(decisions));
+      const data = await fetchWithEditorAccess(
+        `${API}/import/${kind}?replace=${replace ? "true" : "false"}`,
+        { method: "POST", body: form }
+      );
+      toast(data.message || "Импорт завершён");
+      if (data.warnings?.length) {
+        console.warn(`${kind} import warnings:`, data.warnings);
+        toast(`Предупреждений: ${data.warnings.length} (см. консоль)`, "error");
+      }
+      modal.classList.add("hidden");
+      state.selectedId = null;
+      hideDetailPanel();
+      await loadPeople(el.search.value.trim());
+      if (state.people.length) {
+        await selectPerson(state.people[0].id);
+      } else {
+        el.canvas.classList.add("hidden");
+        el.empty.classList.remove("hidden");
+      }
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      applyBtn.disabled = false;
+    }
+  };
+  applyBtn.addEventListener("click", onApply);
 }
 
 async function deleteSelectedPerson() {

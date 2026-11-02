@@ -52,8 +52,17 @@ class PersonRead(PersonBase):
     # импорта без дублей
     external_id: str | None = None
     external_source: str | None = None
+    # Все внешние ID человека: Gramps ID и GEDCOM xref одновременно
+    external_refs: list["ExternalRefRead"] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class ExternalRefRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    source: str
+    external_id: str
 
 
 class MediaRead(BaseModel):
