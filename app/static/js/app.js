@@ -1375,6 +1375,7 @@ function openPersonModalCreate() {
   $("#btn-person-submit").textContent = "Создать";
   // фото секция в create — скрыта (нельзя загрузить до создания, но можно потом в edit)
   $("#modal-photo-section").classList.add("hidden");
+  updateMaidenFieldVisibility();
   openModal("modal-person");
   $("#p-first").focus();
 }
@@ -1393,6 +1394,7 @@ async function openPersonModalEdit(id) {
   $("#p-middle").value = person.middle_name || "";
   $("#p-maiden").value = person.maiden_name || "";
   $("#p-gender").value = person.gender || "unknown";
+  updateMaidenFieldVisibility();
   $("#p-birth").value = person.birth_date || "";
   $("#p-death").value = person.death_date || "";
   $("#p-birth-place").value = person.birth_place || "";
@@ -1437,6 +1439,18 @@ function personFormBody(fd) {
     birth_place: emptyToNull(fd.get("birth_place")?.trim()),
     notes: emptyToNull(fd.get("notes")?.trim()),
   };
+}
+
+// Девичья фамилия — только для женщин; у мужчин поле скрыто
+function updateMaidenFieldVisibility() {
+  const field = $("#field-maiden");
+  if (!field) return;
+  const gender = $("#p-gender")?.value || "unknown";
+  const hide = gender === "male";
+  field.style.display = hide ? "none" : "";
+  if (hide) {
+    $("#p-maiden").value = ""; // не отправлять мужскую девичью фамилию
+  }
 }
 
 // Подставить отчество по имени отца (кнопка ⚡ рядом с полем «Отчество»)
@@ -2058,6 +2072,7 @@ function bindEvents() {
 
   $("#form-person")?.addEventListener("submit", onSavePerson);
   $("#btn-patronymic")?.addEventListener("click", onPatronymicSuggest);
+  $("#p-gender")?.addEventListener("change", updateMaidenFieldVisibility);
   $("#form-relation")?.addEventListener("submit", onCreateRelation);
   $("#form-path")?.addEventListener("submit", onFindPath);
   $("#r-type")?.addEventListener("change", updateRelationLabels);

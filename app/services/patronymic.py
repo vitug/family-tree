@@ -32,8 +32,16 @@ def patronymic_from_father(father_name: str, child_gender: str) -> str | None:
         raw = name[:-1] + ("ич" if male else "инична")
     elif name.endswith("а"):  # Никита → Никитич/Никитична
         raw = name[:-1] + ("ич" if male else "ична")
+    elif name.endswith("ий"):
+        # Василий → Васильевич, Аркадий → Аркадьевич, Евгений → Евгеньевна:
+        # «ий» выпадает, основа смягчается мягким знаком.
+        # Дмитрий — исключение (Дмитриевич, без знака).
+        stem = name[:-2]
+        raw = stem + ("иевич" if stem == "дмитр" and child_gender == "male" else
+                      "иевна" if stem == "дмитр" else
+                      ("ьевич" if child_gender == "male" else "ьевна"))
     elif name.endswith("ь") or name.endswith("й"):
-        # Дмитрий → Дмитриевич, Николай → Николаевич (ь/й выпадает, «е» появляется)
+        # Николай → Николаевич, Сергей → Сергеевич, Алексей → Алексеевич
         raw = name[:-1] + "е" + ("вич" if male else "вна")
     else:  # прочие согласные: Иван → Иванович/Ивановна
         raw = name + ("ович" if male else "овна")
