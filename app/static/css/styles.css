@@ -870,6 +870,14 @@ body::before {
   line-height: 1.25;
 }
 
+.person-card .card-parent {
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.25;
+  word-break: break-word;
+}
+
 .person-card .card-dates {
   font-size: 0.75rem;
   color: var(--text-muted);

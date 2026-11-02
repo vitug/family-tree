@@ -1058,3 +1058,39 @@ def test_tree_cards_include_maiden_name(editor_client):
     t = editor_client.get(f'/api/v1/tree/{w["id"]}').json()
     node = t["tree"]["person"]
     assert node["maiden_name"] == "Смирнова"
+
+
+def test_tree_nodes_include_parent_refs(editor_client):
+    """parent_refs в каждом узле: отец, иначе мать (для плитки «↑ отец»)."""
+    father = _mk(editor_client, "Пётр", "Тестов", gender="male")
+    mother = _mk(editor_client, "Мария", "Тестова", gender="female")
+    child = _mk(editor_client, "Иван", "Тестов", gender="male")
+    orphan = _mk(editor_client, "Сирота", "Безродный", gender="male")
+    single_mom = _mk(editor_client, "Вдова", "Одинокая", gender="female")
+    for parent in (father, mother):
+        editor_client.post(
+            "/api/v1/relationships",
+            json={"person_id": parent["id"], "related_person_id": child["id"],
+                  "relation_type": "parent_of"},
+        )
+    editor_client.post(
+        "/api/v1/relationships",
+        json={"person_id": single_mom["id"], "related_person_id": orphan["id"],
+              "relation_type": "parent_of"},
+    )
+    # дерево от ребёнка: у ребёнка оба родителя в refs
+    t = editor_client.get(f'/api/v1/tree/{child["id"]}?depth_up=0&depth_down=0').json()
+    refs = t["tree"]["parent_refs"]
+    assert {r["first_name"] for r in refs} == {"Пётр", "Мария"}
+
+    # дерево от отца: у узла-ребёнка тоже есть parent_refs
+    t = editor_client.get(f'/api/v1/tree/{father["id"]}?depth_up=0&depth_down=1').json()
+    child_node = t["tree"]["children"][0]
+    assert child_node["person"]["id"] == child["id"]
+    assert {r["first_name"] for r in child_node["parent_refs"]} == {"Пётр", "Мария"}
+
+    # у сироты с одной матерью — только мать
+    t = editor_client.get(f'/api/v1/tree/{single_mom["id"]}?depth_up=0&depth_down=1').json()
+    child_node = t["tree"]["children"][0]
+    assert [r["first_name"] for r in child_node["parent_refs"]] == ["Вдова"]
+

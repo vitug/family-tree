@@ -119,6 +119,8 @@ class TreeNode(BaseModel):
     parents: list[TreeNode] = Field(default_factory=list)
     children: list[TreeNode] = Field(default_factory=list)
     spouses: list[FamilyMember] = Field(default_factory=list)
+    # краткие ссылки на родителей каждого узла (для плитки: отец, иначе мать)
+    parent_refs: list[FamilyMember] = Field(default_factory=list)
 
 
 class TreeResponse(BaseModel):

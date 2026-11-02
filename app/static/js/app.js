@@ -899,6 +899,7 @@ function collectLevels(node) {
       map.set(n.person.id, {
         person: n.person,
         spouses: n.spouses || [],
+        parentRefs: n.parent_refs || [],
         isRoot: gen === 0,
       });
     }
@@ -914,6 +915,7 @@ function collectLevels(node) {
         map.set(c.person.id, {
           person: c.person,
           spouses: c.spouses || [],
+          parentRefs: c.parent_refs || [],
           isRoot: false,
         });
       }
@@ -933,6 +935,12 @@ function cardHtml(entry) {
     entry.spouses && entry.spouses.length
       ? `<div class="spouses">♥ ${entry.spouses.map((s) => escapeHtml(s.full_name)).join(", ")}</div>`
       : "";
+  // отец; если отца нет — мать (по аналогии с супругом)
+  const refs = entry.parentRefs || [];
+  const parent = refs.find((r) => r.gender === "male") || refs.find((r) => r.gender === "female");
+  const parentHtml = parent
+    ? `<div class="card-parent">↑ ${escapeHtml(parent.full_name)}</div>`
+    : "";
       const noteText = (p.notes || "")
         .replace(/Gramps ID:\s*\S+/gi, "")
         .replace(/\s+/g, " ")
@@ -952,6 +960,7 @@ function cardHtml(entry) {
       ${p.maiden_name && p.maiden_name.trim().toLowerCase() !== (p.last_name || "").trim().toLowerCase() ? `<div class="card-maiden">урождённая ${escapeHtml(p.maiden_name)}</div>` : ""}
       <div class="card-dates">${escapeHtml(formatDates(p))}</div>
       <div class="card-id">#${p.id}</div>
+      ${parentHtml}
       ${notesHtml}
       ${spouses}
     </div>`;

@@ -503,6 +503,9 @@ class TreeService:
             node = TreeNode(
                 person=self._to_member(person, generation=gen),
                 spouses=[self._to_member(s, relation="spouse") for s in self._spouses_of(person.id)],
+                parent_refs=[
+                    self._to_member(p, relation="parent") for p in self._parents_of(person.id)
+                ],
             )
             if remaining > 0:
                 for parent in self._parents_of(person.id):
@@ -518,6 +521,9 @@ class TreeService:
                     person=self._to_member(child, relation="child", generation=gen),
                     spouses=[
                         self._to_member(s, relation="spouse") for s in self._spouses_of(child.id)
+                    ],
+                    parent_refs=[
+                        self._to_member(p, relation="parent") for p in self._parents_of(child.id)
                     ],
                 )
                 build_down(child_node, remaining - 1, gen + 1)
