@@ -219,7 +219,7 @@ async def import_gedcom(
     db: Session = Depends(get_db),
 ) -> GedcomImportResult:
     """Импорт из GEDCOM 5.5.1 (.ged): люди, семьи, даты. Xref сохраняется."""
-    data, filename = await _read_upload(file, (".ged",))
+    data, _ = await _read_upload(file, (".ged",))
     parsed_decisions = _parse_decisions(decisions)
 
     from app.services.gedcom_import import GedcomImporter
@@ -231,7 +231,7 @@ async def import_gedcom(
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         db.rollback()
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Ошибка импорта: {exc}") from exc
 
