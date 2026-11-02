@@ -1670,6 +1670,46 @@ async function onImportGramps(e) {
   }
 }
 
+async function onImportGedcom(e) {
+  const input = e.target;
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+
+  const proceed = confirm(`Импортировать файл «${file.name}» (GEDCOM)?`);
+  if (!proceed) return;
+
+  const replace = confirm(
+    "Заменить текущее дерево?\n\nOK — очистить базу и импортировать\nОтмена — добавить к существующим данным (совпадения по GEDCOM ID обновятся)"
+  );
+
+  const form = new FormData();
+  form.append("file", file);
+
+  try {
+    const data = await fetchWithEditorAccess(`${API}/import/gedcom?replace=${replace ? "true" : "false"}`, {
+      method: "POST",
+      body: form,
+    });
+    toast(data.message || "Импорт завершён");
+    if (data.warnings?.length) {
+      console.warn("GEDCOM import warnings:", data.warnings);
+      toast(`Предупреждений: ${data.warnings.length} (см. консоль)`, "error");
+    }
+    state.selectedId = null;
+    hideDetailPanel();
+    await loadPeople(el.search.value.trim());
+    if (state.people.length) {
+      await selectPerson(state.people[0].id);
+    } else {
+      el.canvas.classList.add("hidden");
+      el.empty.classList.remove("hidden");
+    }
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
 async function deleteSelectedPerson() {
   const id = Number(el.detail.dataset.personId);
   if (!id) return;
@@ -1954,6 +1994,11 @@ function bindEvents() {
     $("#file-gramps")?.click();
   });
   $("#file-gramps")?.addEventListener("change", onImportGramps);
+  $("#btn-import-gedcom")?.addEventListener("click", () => {
+    closeHeaderMenu();
+    $("#file-gedcom")?.click();
+  });
+  $("#file-gedcom")?.addEventListener("change", onImportGedcom);
   $("#btn-export-obsidian")?.addEventListener("click", () => {
     closeHeaderMenu();
     onExportObsidian();

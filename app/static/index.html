@@ -65,6 +65,7 @@
           <div class="header-menu-panel hidden" id="header-menu-panel" role="menu">
             <button class="header-menu-item" id="btn-path" type="button" role="menuitem">Путь родства</button>
             <button class="header-menu-item" id="btn-import" type="button" role="menuitem">Импорт Gramps</button>
+            <button class="header-menu-item" id="btn-import-gedcom" type="button" role="menuitem">Импорт GEDCOM</button>
             <button class="header-menu-item" id="btn-export-obsidian" type="button" role="menuitem">Экспорт Obsidian</button>
             <button class="header-menu-item" id="btn-install-app" type="button" role="menuitem" hidden>Установить приложение</button>
             <button class="header-menu-item" id="btn-reload-app" type="button" role="menuitem">🔄 Обновить приложение</button>
@@ -75,6 +76,7 @@
           <div id="auth-status" class="auth-status" aria-live="polite"></div>
           <button class="btn btn-ghost btn-icon" id="btn-auth" type="button" title="Вход / Выход" aria-label="Авторизация">🔐</button>
           <input type="file" id="file-gramps" accept=".gpkg,.gramps,.xml,application/gzip,application/xml" hidden />
+          <input type="file" id="file-gedcom" accept=".ged,text/plain" hidden />
         </div>
       </div>
     </header>

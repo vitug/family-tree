@@ -76,6 +76,7 @@ class ImportStats:
     media_imported: int = 0  # уникальных файлов сохранено
     media_linked: int = 0  # привязок person↔photo
     media_missing: int = 0  # object в XML без файла в архиве
+    updated_people: int = 0  # существующих обновлено при повторном импорте
     warnings: list[str] = field(default_factory=list)
 
 
@@ -514,13 +515,34 @@ class GrampsImporter:
             )
 
             note_parts = []
-            if gramps_id:
-                note_parts.append(f"Gramps ID: {gramps_id}")
 
             def clip(val: str | None, n: int) -> str | None:
                 if not val:
                     return None
                 return val[:n]
+
+            # Повторный импорт: матчинг по (external_source, external_id),
+            # существующего человека обновляем, а не создаём дубль
+            existing = None
+            if gramps_id:
+                existing = (
+                    self.db.query(Person)
+                    .filter_by(external_source="gramps", external_id=gramps_id[:64])
+                    .first()
+                )
+
+            if existing is not None:
+                existing.first_name = (names["first_name"] or existing.first_name)[:100]
+                existing.last_name = clip(names["last_name"], 100) or existing.last_name
+                existing.middle_name = clip(names["middle_name"], 100)
+                existing.maiden_name = clip(names["maiden_name"], 100)
+                existing.gender = gender
+                existing.birth_date = birth_date
+                existing.death_date = death_date
+                existing.birth_place = clip(birth_place, 255)
+                stats.updated_people += 1
+                handle_map[handle] = existing
+                continue
 
             person = Person(
                 first_name=(names["first_name"] or "Без имени")[:100],
@@ -532,6 +554,8 @@ class GrampsImporter:
                 death_date=death_date,
                 birth_place=clip(birth_place, 255),
                 notes=clip("; ".join(note_parts), 2000) if note_parts else None,
+                external_id=gramps_id[:64] if gramps_id else None,
+                external_source="gramps" if gramps_id else None,
             )
             self.db.add(person)
             self.db.flush()

@@ -46,6 +46,10 @@ def _migrate_columns() -> None:
             "role": "VARCHAR(16) DEFAULT 'editor' NOT NULL",
             "scope_depth": "INTEGER",
         },
+        "persons": {
+            "external_id": "VARCHAR(64)",
+            "external_source": "VARCHAR(32)",
+        },
     }
     with engine.begin() as conn:
         for table, adds in cols.items():

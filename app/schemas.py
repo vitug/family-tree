@@ -48,6 +48,10 @@ class PersonRead(PersonBase):
     full_name: str
     photo_url: str | None = None
     photo_thumb_url: str | None = None
+    # Идентификатор из источника импорта (Gramps/GEDCOM), для повторного
+    # импорта без дублей
+    external_id: str | None = None
+    external_source: str | None = None
     created_at: datetime
     updated_at: datetime
 

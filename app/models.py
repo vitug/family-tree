@@ -42,6 +42,9 @@ class Person(Base):
     death_date: Mapped[date | None] = mapped_column(Date)
     birth_place: Mapped[str | None] = mapped_column(String(255))
     notes: Mapped[str | None] = mapped_column(Text)
+    # Внешний идентификатор из источника импорта (Gramps ID, GEDCOM xref @I12@)
+    external_id: Mapped[str | None] = mapped_column(String(64))
+    external_source: Mapped[str | None] = mapped_column(String(32))
     # Относительный путь внутри media_dir, например "files/abc_photo.jpg"
     photo_path: Mapped[str | None] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
